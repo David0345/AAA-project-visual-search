@@ -12,20 +12,20 @@
 `+ val_dataset.py for evaluating and calculate metrics`
 ## Столбцы val_ds
 
-| Column | Type | Description                                                                  |
-|---|---|------------------------------------------------------------------------------|
-| `query_id` | int | query id                                                                     |
-| `mode` | str | `image` / `txt` / `multimodal`                                               |
-| `item_id` | int | Source item ID                                                               |
-| `image_id` | int | ID запросного изображения (title image для txt/multimodal, random для image) |
-| `image_path` | str | Относительный путь до query image (`dataset_1M/...`)                         |
+| Column | Type     | Description                                                                  |
+|---|----------|------------------------------------------------------------------------------|
+| `query_id` | int      | query id                                                                     |
+| `mode` | str      | `image` / `txt` / `multimodal`                                               |
+| `item_id` | int      | Source item ID                                                               |
+| `image_id` | int      | ID запросного изображения (title image для txt/multimodal, random для image) |
+| `image_path` | str      | Относительный путь до query image (`dataset_1M/...`)                         |
 | `txt_query` | str\|NaN | Текстовый запрос(NaN для img search)                                         |
-| `target_images_id` | str | Ids таргетных изображений(sep - ;)                                           |
-| `param2` | str | Подкатегория                                                                 |
-| `category_name` | str | Категория                                                                    |
-| `sostoyanie` | str | Сост.                                                                        |
-| `cvet` | str | Цвет                                                                         |
-| `brand` | str | Бренд                                                                        |
+| `target_images_id` | set      | Ids таргетных изображений(set)                                               |
+| `param2` | str      | Подкатегория                                                                 |
+| `category_name` | str      | Категория                                                                    |
+| `sostoyanie` | str      | Сост.                                                                        |
+| `cvet` | str      | Цвет                                                                         |
+| `brand` | str      | Бренд                                                                        |
 
 ## Стратегии поиска
 
