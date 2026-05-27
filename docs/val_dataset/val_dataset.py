@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 
-VAL_DATASET_PATH = "../../val_dataset.csv"
+VAL_DATASET_PATH = "val_dataset.csv"
 IMAGES_BASE = "dataset_1M"
 
 
