@@ -1,0 +1,6 @@
+# Под-конфиг модели. На него ссылаются experiment-конфиги.
+# Имя резолвится через visual_search.models.registry.build_model.
+name: clip_vit_b32
+embed_dim: 512
+pretrained: openai        # источник весов бэкбона (open_clip)
+freeze_backbone: false    # дотюним целиком; true -> учим только головы

@@ -1,0 +1,8 @@
+# Experiment = композиция под-конфигов. Поменять только LR -> новый файл в
+# train/, остальное переиспользуется. Так растёт сетка экспериментов без
+# дублирования (см. §7 PROJECT_STRUCTURE).
+name: clip_baseline
+defaults:
+  data: baseline
+  model: clip_vit_b32
+  train: adamw_cosine

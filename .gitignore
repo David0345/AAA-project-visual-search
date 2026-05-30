@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Project data & run artifacts (структуру папок храним через .gitkeep) ---
+/data/**
+!/data/
+!/data/**/
+!/data/**/.gitkeep
+/experiments/**
+!/experiments/
+!/experiments/.gitkeep
