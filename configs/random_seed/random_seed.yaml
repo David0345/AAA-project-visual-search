@@ -1,0 +1,3 @@
+fix: True
+seed: 42
+deterministic_algorithms: true

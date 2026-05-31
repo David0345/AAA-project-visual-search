@@ -1,0 +1,17 @@
+defaults:
+  - data: baseline
+  - model: clip_vit_b32
+  - train: adamw_cosine
+  - seed: deterministic
+  - experiment: null
+  - _self_
+
+project: avito_visual_search
+device: auto  # auto | cuda | cpu
+output_dir: ${hydra:runtime.output_dir}
+
+hydra:
+  run:
+    dir: experiments/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra:job.name}
+  job:
+    chdir: true  # рабочая директория автоматически меняется на папку запуска

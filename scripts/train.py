@@ -5,18 +5,27 @@
 """
 
 from __future__ import annotations
+import hydra
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
+import torch
 
-import argparse
-
-from visual_search.common.config import load_config
 from visual_search.training.train import run
+from visual_search.common.seed import set_seed
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=True)
-    args = parser.parse_args()
-    run(load_config(args.config))
+@hydra.main(config_path="../configs", config_name="config", version_base="1.3")
+def main(config: DictConfig) -> None:
+
+    if config.seed.fix:
+        set_seed(config.seed.seed, deterministic=config.seed.deterministic_algorithms)
+
+    if config.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(config.device)
+
+    run(config, device)
 
 
 if __name__ == "__main__":

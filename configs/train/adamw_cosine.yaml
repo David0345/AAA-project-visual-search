@@ -1,11 +1,15 @@
-# Под-конфиг обучения: оптимизатор, scheduler, лосс.
-optimizer: adamw
-lr: 1.0e-4
-weight_decay: 0.2
-epochs: 10
-scheduler: cosine
-warmup_steps: 500
-loss: infonce             # infonce (CLIP) | siglip
-temperature: 0.07
-seed: 42
-tracking: csv             # csv | tensorboard | wandb
+epochs: 5
+gradient_accumulation: 1
+max_grad_norm: 1.0
+checkpoint_every: 1000
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 5e-6
+  weight_decay: 0.01
+  eps: 1e-8
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  T_max: ${train.epochs}
+  eta_min: 1e-7

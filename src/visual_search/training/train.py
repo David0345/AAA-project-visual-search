@@ -6,9 +6,19 @@ TODO(Обучение): run(config) — seed, datamodule, build_model, optim, lo
 """
 
 from __future__ import annotations
+import hydra
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
+import torch
 
 from typing import Any
 
 
-def run(config: dict[str, Any]) -> None:
+def run(config: DictConfig, device: torch.device) -> None:
+    model = ...
+
+    # Создание оптимизатора и шедулера напрямую из конфига
+    optimizer = instantiate(config.train.optimizer, params=model.parameters())
+    scheduler = instantiate(config.train.scheduler, optimizer=optimizer)
+
     raise NotImplementedError
