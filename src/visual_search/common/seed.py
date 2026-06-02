@@ -1,9 +1,4 @@
-"""Фиксация сидов для воспроизводимости прогонов.
-
-Один и тот же конфиг + тот же сид -> тот же результат (см. §7 PROJECT_STRUCTURE).
-
-TODO(common): seed_everything(seed) — random, numpy, torch, cudnn.
-"""
+"""Фиксация сидов для воспроизводимости прогонов."""
 
 from __future__ import annotations
 import os
