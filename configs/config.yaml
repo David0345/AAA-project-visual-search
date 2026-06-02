@@ -2,7 +2,7 @@ defaults:
   - data: baseline
   - model: clip_vit_b32
   - train: adamw_cosine
-  - seed: deterministic
+  - random_seed: random_seed
   - experiment: null
   - _self_
 
@@ -14,4 +14,4 @@ hydra:
   run:
     dir: experiments/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra:job.name}
   job:
-    chdir: true  # рабочая директория автоматически меняется на папку запуска
+    chdir: false  # рабочая директория автоматически меняется на папку запуска

@@ -17,8 +17,8 @@ import re
 from pathlib import Path
 import pandas as pd
 
-from category_synonyms import CATEGORY_SYNONYMS
-from brand_translit import BRAND_RU
+from visual_search.data.prepare.category_synonyms import CATEGORY_SYNONYMS
+from visual_search.data.prepare.brand_translit import BRAND_RU
 
 
 def load_and_filter_data(data_dir: Path, valid_ids_path: Path):
