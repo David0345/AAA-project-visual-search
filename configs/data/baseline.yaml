@@ -1,7 +1,10 @@
 # Под-конфиг данных. Описывает источник train.parquet и препроцессинг.
-train_parquet: data/processed/train.parquet
 images_root: data/raw/dataset_1M
+train_path: data/processed/final_train.parquet
+val_path: data/processed/val.csv
+test_path: data/processed/test.csv
 image_size: 224
 batch_size: 256
 num_workers: 8
+pin_memory: true
 augmentations: light      # light | none | strong
