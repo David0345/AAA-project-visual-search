@@ -6,10 +6,10 @@
 словари синонимов категорий и транслитераций брендов.
 
 Пример запуска:
-    python prepare_train_data.py \
-        --data-dir dataset_1M \
-        --valid-ids valid_image_ids.csv \
-        --output train.parquet
+    python src/visual_search/data/prepare/build_train.py \
+        --data-dir data/raw/dataset_1M \
+        --valid-ids src/visual_search/data/eda/valid_image_ids.csv \
+        --output data/interim/train.parquet
 """
 
 import argparse
