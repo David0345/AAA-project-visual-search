@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 
@@ -25,14 +24,19 @@ from omegaconf import DictConfig, OmegaConf
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+from visual_search.common.seed import set_seed
+from visual_search.common.logging import get_logger
 from visual_search.data.prepare.build_train import prepare
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 @hydra.main(config_path='../configs', config_name='config', version_base='1.3')
 def main(config: DictConfig) -> None:
     OmegaConf.resolve(config)
+
+    if config.seed.get("fix", True):
+        set_seed(config.seed.seed, deterministic=config.seed.get("deterministic_algorithms", False))
 
     data_config = config.data
     data_dir = Path(data_config.get('data_dir', 'data/raw/dataset_1M'))
@@ -81,10 +85,8 @@ def main(config: DictConfig) -> None:
 
     log.info('Сплит валидации на val.csv и test.csv...')
     test_frac = data_config.get('test_frac', 0.3)
-    seed = config.seed.seed if hasattr(config, 'seed') else 42
 
     unique_items = val_df['item_id'].dropna().unique()
-    np.random.seed(seed)
     np.random.shuffle(unique_items)
 
     n_test = max(1, int(len(unique_items) * test_frac))

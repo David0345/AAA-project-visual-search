@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
-import argparse
+from visual_search.common.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def main() -> None:

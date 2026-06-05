@@ -7,3 +7,7 @@ TODO(index): build / save / load / search.
 """
 
 from __future__ import annotations
+
+from visual_search.common.logging import get_logger
+
+logger = get_logger(__name__)
