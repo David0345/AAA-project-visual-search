@@ -19,3 +19,6 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
         torch.use_deterministic_algorithms(True, warn_only=True)
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+
+
+set_seed = seed_everything
