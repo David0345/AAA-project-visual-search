@@ -1,7 +1,12 @@
 """Epoch/step логика: forward, лосс, backward, шаг оптимизатора, валидация.
 
-Ожидаемый формат батча от DataLoader:
-    {"images": Tensor(B, C, H, W), "tokens": Tensor(B, L)}
+Ожидаемый формат батча от DataLoader (контракт с collate.py):
+    {
+        "images": Tensor(B, C, H, W),
+        "input_ids": Tensor(B, L),
+        "attention_mask": Tensor(B, L),
+        "item_ids": List[int]
+    }
 """
 
 from __future__ import annotations
@@ -47,11 +52,12 @@ def train_one_epoch(
 
     for micro_step, batch in enumerate(loader):
         images = batch["images"].to(device, non_blocking=True)
-        tokens = batch["tokens"].to(device, non_blocking=True)
+        input_ids = batch["input_ids"].to(device, non_blocking=True)
+        attention_mask = batch["attention_mask"].to(device, non_blocking=True)
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
             img_emb = model.encode_image(images)
-            txt_emb = model.encode_text(tokens)
+            txt_emb = model.encode_text(input_ids, attention_mask=attention_mask)
             loss = loss_fn(img_emb, txt_emb) / accum
 
         if scaler is not None:
@@ -120,9 +126,10 @@ def validate(
     n = 0
     for batch in loader:
         images = batch["images"].to(device, non_blocking=True)
-        tokens = batch["tokens"].to(device, non_blocking=True)
+        input_ids = batch["input_ids"].to(device, non_blocking=True)
+        attention_mask = batch["attention_mask"].to(device, non_blocking=True)
         img_emb = model.encode_image(images)
-        txt_emb = model.encode_text(tokens)
+        txt_emb = model.encode_text(input_ids)
         total_loss += loss_fn(img_emb, txt_emb).item()
         n += 1
     return total_loss / max(n, 1)
