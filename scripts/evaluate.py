@@ -1,106 +1,104 @@
-"""CLI: оценка модели на val_dataset.
+"""CLI: оценка модели на валидационном датасете.
 
 Тонкая обёртка — логика в visual_search.evaluation.evaluate.
+Управляется через Hydra-конфиги.
 
-Примеры::
+Примеры запуска:
+    # Оценка с конфигом по умолчанию
+    uv run python scripts/evaluate.py
 
-    # Полный прогон (модель + индекс)
-    python scripts/evaluate.py \\
-        --checkpoint experiments/baseline/checkpoint.pt \\
-        --index      experiments/baseline/index.bin \\
-        --images-base data/raw/dataset_1M
-
-    # Только метрики без рисков загрузки модели (search_fn из файла)
-    python scripts/evaluate.py \\
-        --val-csv src/visual_search/evaluation/val_dataset/val_dataset.csv \\
-        --dry-run   # выведет статистику датасета и выйдет
+    # Переопределение путей и параметров через CLI
+    uv run python scripts/evaluate.py \
+        eval.checkpoint_path=experiments/run_01/checkpoints/best.pt \
+        eval.index_path=experiments/run_01/index.faiss \
+        eval.output_dir=experiments/run_01/eval_results \
+        data.val_path=data/processed/val.csv
 """
-
 from __future__ import annotations
-
-import argparse
-import json
 import logging
 import sys
+from pathlib import Path
+
+import hydra
+import torch
+from omegaconf import DictConfig, OmegaConf
 
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+from visual_search.common.seed import set_seed
+from visual_search.common.logging import get_logger
+from visual_search.common.io import EXPERIMENTS_DIR
+from visual_search.data.dataset import SearchEvalDataset
+from visual_search.models.registry import build_model, get_processor
+from visual_search.training.checkpoint import load_checkpoint
+from visual_search.evaluation.evaluate import evaluate
+from visual_search.index.ann import ANNIndex # Предполагаем, что вы его реализуете
+
+logger = get_logger(__name__)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--checkpoint", default=None, help="Путь к .pt-файлу чекпоинта модели")
-    parser.add_argument("--index", default=None, help="Путь к файлу ANN-индекса")
-    parser.add_argument(
-        "--val-csv",
-        default=None,
-        help="Путь к val_dataset.csv (по умолчанию — встроенный в пакет)",
-    )
-    parser.add_argument(
-        "--images-base",
-        default="",
-        help="Префикс для путей изображений (например, data/raw/dataset_1M)",
-    )
-    parser.add_argument(
-        "--k-values",
-        nargs="+",
-        type=int,
-        default=[1, 5, 10],
-        metavar="K",
-        help="Список K для Recall@K и Precision@K (по умолчанию: 1 5 10)",
-    )
-    parser.add_argument(
-        "--output-json",
-        default=None,
-        help="Сохранить результаты в JSON-файл",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Только загрузить датасет, распечатать статистику и выйти",
-    )
-    args = parser.parse_args()
+@hydra.main(config_path="../configs", config_name="config", version_base="1.3")
+def main(config: DictConfig) -> None:
+    if config.seed.get("fix", True):
+        set_seed(config.seed.seed, deterministic=config.seed.get("deterministic_algorithms", False))
 
-    from visual_search.evaluation.val_dataset import ValDataset
-    from visual_search.evaluation.evaluate import print_report
+    if config.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(config.device)
 
-    # --- dry-run: просто показать статистику датасета ---
-    if args.dry_run:
-        ds_kwargs = {"csv_path": args.val_csv} if args.val_csv else {}
-        ds = ValDataset(**ds_kwargs, images_base=args.images_base)
-        st = ds.stats()
-        print(f"ValDataset: total={st['total']}  image={st['image']}  txt={st['txt']}  multimodal={st['multimodal']}")
-        return
+    logger.info(f"Using device: {device}")
 
-    # --- Полный прогон ---
-    if args.checkpoint is None or args.index is None:
-        parser.error("--checkpoint и --index обязательны для полного прогона (или используйте --dry-run)")
+    checkpoint_path = Path(config.eval.checkpoint_path)
+    if not checkpoint_path.exists():
+        logger.error(f"Checkpoint not found: {checkpoint_path}")
+        sys.exit(1)
 
-    from visual_search.models.registry import build_model  # noqa: F401 — TODO заменить на load_checkpoint
-    from visual_search.evaluation.evaluate import evaluate
+    logger.info(f"Loading model from {checkpoint_path}")
+    model_cfg = OmegaConf.to_container(config.model, resolve=True)
+    model = build_model(model_cfg).to(device)
 
-    # TODO(Оценка): реализовать load_checkpoint(path) → model после того, как
-    #               training/loop.py научится сохранять чекпоинты.
-    raise NotImplementedError(
-        "load_checkpoint ещё не реализован — ждём PR от команды Обучения.\n"
-        "Для тестирования метрик используйте evaluate_with_search_fn напрямую."
+    load_checkpoint(checkpoint_path, model, device=device)
+    model.eval()
+
+    index_path = Path(config.eval.index_path)
+    if not index_path.exists():
+        logger.error(f"Index not found: {index_path}")
+        sys.exit(1)
+
+    logger.info(f"Loading ANN index from {index_path}")
+    index = ANNIndex.load(str(index_path))
+
+    logger.info(f"Loading evaluation dataset from {config.data.val_path}")
+    processor = get_processor(config.model.pretrained)
+
+    dataset = SearchEvalDataset(
+        csv_path=config.data.val_path,
+        image_root=config.data.images_root,
+        processor=processor,
     )
 
-    # Код ниже будет активирован после появления load_checkpoint:
-    # model = load_checkpoint(args.checkpoint)
-    # index = ANNIndex.load(args.index)
-    # results = evaluate(
-    #     model, index,
-    #     dataset_path=args.val_csv,
-    #     images_base=args.images_base,
-    #     k_values=args.k_values,
-    # )
-    # print_report(results)
-    # if args.output_json:
-    #     with open(args.output_json, "w") as f:
-    #         json.dump({mode: m.as_flat_dict() for mode, m in results.items()}, f, indent=2, ensure_ascii=False)
-    #     logger.info("Результаты сохранены в %s", args.output_json)
+    logger.info("Starting evaluation...")
+    results = evaluate(
+        model=model,
+        index=index,
+        dataset=dataset,
+        device=device,
+        k_values=config.eval.get("k_values", [1, 5, 10]),
+    )
+
+    output_dir = Path(config.eval.get("output_dir", "experiments/eval_results"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    import json
+    metrics_dict = {mode: metrics.as_flat_dict() for mode, metrics in results.items()}
+
+    out_file = output_dir / "metrics.json"
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(metrics_dict, f, indent=2, ensure_ascii=False)
+
+    logger.info(f"Evaluation complete. Metrics saved to {out_file}")
 
 
 if __name__ == "__main__":

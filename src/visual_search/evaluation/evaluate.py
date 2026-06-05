@@ -1,19 +1,6 @@
-"""Прогон val_dataset через модель + ANN-индекс → отчёт по трём режимам.
+"""Прогон SearchEvalDataset через модель + ANN-индекс → отчёт по трём режимам.
 
 Это логика пайплайна; запускается тонкой обёрткой ``scripts/evaluate.py``.
-
-Основная точка входа::
-
-    results = evaluate(model, index, dataset_path="...", images_base="...")
-    # results["txt"]["recall@10"]  → 0.73
-    # results["all"]["mrr"]        → 0.61
-
-Дополнительная точка входа для случаев, когда кодирование управляется снаружи::
-
-    results = evaluate_with_search_fn(
-        search_fn=lambda q: index.search(model.encode_query(q), k=10),
-        dataset_path="...",
-    )
 
 Интерфейсы, от которых зависит этот модуль:
     * ``Encoder``  — ``models/base.py``:
@@ -27,246 +14,215 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Callable, Dict, List, Any
 
 import numpy as np
+import torch
+from torch.utils.data import DataLoader
 
-from .metrics import ModeMetrics, aggregate
-from .val_dataset import ValDataset, ValQuery
+from visual_search.data.dataset import SearchEvalDataset
+from visual_search.data.collate import eval_collate_fn
+from visual_search.evaluation.metrics import ModeMetrics, aggregate
+from visual_search.models.base import Encoder
 
 logger = logging.getLogger(__name__)
 
 MODES = ("image", "txt", "multimodal")
-DEFAULT_K = 10
 DEFAULT_K_VALUES = [1, 5, 10]
 
 
-# ---------------------------------------------------------------------------
-# Вспомогательные функции кодирования запроса
-# ---------------------------------------------------------------------------
-
-
-def _encode_query(query: ValQuery, model, tokenizer, image_transform) -> np.ndarray:
-    """Закодировать один запрос в вектор через модель.
-
-    Логика по режимам:
-        image       → encode_image
-        txt         → encode_text
-        multimodal  → среднее (encode_image + encode_text), L2-нормировано
+def _encode_query_batch(batch: List[Dict[str, Any]], model: Encoder, device: torch.device) -> np.ndarray:
+    """
+    Кодирует батч запросов (batch_size=1 из-за eval_collate_fn) в единый L2-нормированный вектор.
+    Корректно обрабатывает мультимодальное слияние с весом alpha.
 
     Args:
-        query:            ValQuery из ValDataset.
-        model:            объект, реализующий Encoder (models/base.py).
-        tokenizer:        callable(text: str) → Tensor(1, L)
-        image_transform:  callable(PIL.Image) → Tensor(1, C, H, W)
+        batch: Список из одного словаря, возвращаемого SearchEvalDataset.
+        model: Экземпляр модели, реализующий протокол Encoder.
+        device: Устройство (cpu/cuda) для вычислений.
 
     Returns:
-        np.ndarray shape (D,) — L2-нормированный вектор.
+        np.ndarray: Вектор размерности (D,), L2-нормированный, тип float32.
     """
-    import torch
-    from PIL import Image
+    item = batch[0]
+    query = item['query']
+    mode = item['mode']
 
-    vecs: list[np.ndarray] = []
+    vecs = []
+    weights = []
 
-    if query.image_path is not None and query.mode in ("image", "multimodal"):
-        img = Image.open(query.image_path).convert("RGB")
-        img_tensor = image_transform(img).unsqueeze(0)  # (1, C, H, W)
+    if query.get('pixel_values') is not None and mode in ('image', 'multimodal'):
+        img_tensor = query['pixel_values'].unsqueeze(0).to(device)  # [1, C, H, W]
         with torch.no_grad():
             img_vec = model.encode_image(img_tensor).squeeze(0).cpu().numpy()
         vecs.append(img_vec)
+        # Для image вес картинки = 1.0, для multimodal вес = (1 - alpha)
+        alpha = query.get('multimodal_alpha', 0.5)
+        weights.append(1.0 if mode == 'image' else (1.0 - alpha))
 
-    if query.txt_query is not None and query.mode in ("txt", "multimodal"):
-        tokens = tokenizer(query.txt_query)  # (1, L)
+    if query.get('input_ids') is not None and mode in ('txt', 'multimodal'):
+        input_ids = query['input_ids'].unsqueeze(0).to(device)  # [1, L]
+        attention_mask = None
+        if query.get('attention_mask') is not None:
+            attention_mask = query['attention_mask'].unsqueeze(0).to(device)
         with torch.no_grad():
-            txt_vec = model.encode_text(tokens).squeeze(0).cpu().numpy()
+            txt_vec = model.encode_text(input_ids, attention_mask=attention_mask).squeeze(0).cpu().numpy()
         vecs.append(txt_vec)
+        # Для txt вес текста = 1.0, для multimodal вес = alpha
+        alpha = query.get('multimodal_alpha', 0.5)
+        weights.append(1.0 if mode == 'txt' else alpha)
 
     if not vecs:
-        raise ValueError(
-            f"query_id={query.query_id}: нет ни image_path, ни txt_query для mode={query.mode!r}"
-        )
+        raise ValueError(f"Не удалось закодировать запрос. mode={mode}, query keys={query.keys()}")
 
-    vec = np.mean(vecs, axis=0).astype(np.float32)
+    vec = np.average(vecs, axis=0, weights=weights).astype(np.float32)
+
     norm = np.linalg.norm(vec)
-    if norm > 0:
+    if norm > 1e-8:
         vec = vec / norm
+
     return vec
 
 
-# ---------------------------------------------------------------------------
-# Главные точки входа
-# ---------------------------------------------------------------------------
-
-
 def evaluate_with_search_fn(
-    search_fn: Callable[[ValQuery], list[int]],
-    dataset_path: str | None = None,
-    images_base: str = "",
-    k_values: list[int] | None = None,
+    search_fn: Callable[[Dict[str, Any]], List[int]],
+    dataset: SearchEvalDataset,
+    k_values: List[int] | None = None,
     verbose: bool = True,
-) -> dict[str, ModeMetrics]:
-    """Оценить качество поиска, используя произвольную функцию поиска.
-
-    Это низкоуровневая функция — полезна для тестирования и быстрых экспериментов.
+) -> Dict[str, ModeMetrics]:
+    """
+    Оценить качество поиска, используя произвольную функцию поиска (низкоуровневая точка входа).
+    Полезна для тестирования альтернативных стратегий ранжирования без переобучения модели.
 
     Args:
-        search_fn:    callable(ValQuery) → list[int]
-                      Принимает запрос, возвращает ranked список image_id.
-        dataset_path: путь к val_dataset.csv; если None — используется путь по умолчанию.
-        images_base:  префикс путей к изображениям.
-        k_values:     список K для Recall@K и Precision@K (по умолчанию [1, 5, 10]).
-        verbose:      логировать прогресс.
+        search_fn: Функция, принимающая item-словарь из SearchEvalDataset и возвращающая 
+                   список image_id в порядке убывания релевантности.
+        dataset: Экземпляр SearchEvalDataset.
+        k_values: Список K для метрик Recall@K и Precision@K (по умолчанию [1, 5, 10]).
+        verbose: Если True, логировать прогресс и итоги в stdout.
 
     Returns:
-        Словарь ``{mode: ModeMetrics}`` для каждого режима + ключ ``"all"``.
+        Dict[str, ModeMetrics]: Словарь метрик по каждому режиму ('image', 'txt', 'multimodal') 
+                                и общий режим 'all'.
     """
     if k_values is None:
         k_values = DEFAULT_K_VALUES
 
-    ds_kwargs: dict = {} if dataset_path is None else {"csv_path": dataset_path}
-    dataset = ValDataset(**ds_kwargs, images_base=images_base)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=eval_collate_fn)
+
+    results: Dict[str, ModeMetrics] = {}
+    all_ranks: List[List[int]] = []
+    all_targets: List[set[int]] = []
+    all_categories: List[str] = []
+
+    mode_ranks: Dict[str, List[List[int]]] = {m: [] for m in MODES}
+    mode_targets: Dict[str, List[set[int]]] = {m: [] for m in MODES}
+    mode_cats: Dict[str, List[str]] = {m: [] for m in MODES}
+
+    search_k = max(k_values)
 
     if verbose:
-        st = dataset.stats()
-        logger.info(
-            "ValDataset loaded: total=%d  image=%d  txt=%d  multimodal=%d",
-            st["total"], st["image"], st["txt"], st["multimodal"],
-        )
+        logger.info("Начало оценки через search_fn...")
 
-    results: dict[str, ModeMetrics] = {}
-    all_ranks: list[list[int]] = []
-    all_targets: list[set[int]] = []
-    all_categories: list[str] = []
+    for batch in dataloader:
+        item = batch[0]
+        mode = item['mode']
+        target_ids = set(item['target_ids'])
+        category = item['metadata'].get('category_name') or 'unknown'
 
-    for mode in MODES:
-        queries = dataset.get_by_mode(mode)
-        if not queries:
-            if verbose:
-                logger.warning("Режим %r: нет запросов, пропускаем.", mode)
+        if not target_ids:
             continue
 
-        ranks: list[list[int]] = []
-        targets: list[set[int]] = []
-        categories: list[str] = []
+        ranked_ids = search_fn(item)
 
-        for q in queries:
-            ranked = search_fn(q)
-            ranks.append(ranked)
-            targets.append(q.target_image_ids)
-            categories.append(str(q.metadata.get("param2") or "unknown"))
+        ranked_ids = ranked_ids[:search_k]
 
-        mode_metrics = aggregate(ranks, targets, k_values, categories, mode=mode)
-        results[mode] = mode_metrics
+        mode_ranks[mode].append(ranked_ids)
+        mode_targets[mode].append(target_ids)
+        mode_cats[mode].append(category)
 
-        if verbose:
-            flat = mode_metrics.as_flat_dict()
-            logger.info(
-                "[%s] n=%d  recall@%d=%.3f  precision@%d=%.3f  mrr=%.3f",
-                mode, flat["count"],
-                DEFAULT_K, flat.get(f"recall@{DEFAULT_K}", 0),
-                DEFAULT_K, flat.get(f"precision@{DEFAULT_K}", 0),
-                flat["mrr"],
+        all_ranks.append(ranked_ids)
+        all_targets.append(target_ids)
+        all_categories.append(category)
+
+    for mode in MODES:
+        if mode_ranks[mode]:
+            results[mode] = aggregate(
+                per_query_ranks=mode_ranks[mode],
+                per_query_targets=mode_targets[mode],
+                k_values=k_values,
+                per_query_categories=mode_cats[mode],
+                mode=mode
             )
+            if verbose:
+                m = results[mode]
+                logger.info(f"[{mode}] N={m.count}, Recall@10={m.recall_at_k.get(10, 0):.4f}, MRR={m.mrr_score:.4f}")
 
-        all_ranks.extend(ranks)
-        all_targets.extend(targets)
-        all_categories.extend(categories)
-
-    # Агрегат по всем режимам
-    results["all"] = aggregate(all_ranks, all_targets, k_values, all_categories, mode="all")
-
-    if verbose:
-        flat = results["all"].as_flat_dict()
-        logger.info(
-            "[all]  n=%d  recall@%d=%.3f  precision@%d=%.3f  mrr=%.3f",
-            flat["count"],
-            DEFAULT_K, flat.get(f"recall@{DEFAULT_K}", 0),
-            DEFAULT_K, flat.get(f"precision@{DEFAULT_K}", 0),
-            flat["mrr"],
+    if all_ranks:
+        results["all"] = aggregate(
+            per_query_ranks=all_ranks,
+            per_query_targets=all_targets,
+            k_values=k_values,
+            per_query_categories=all_categories,
+            mode="all"
         )
+        if verbose:
+            m = results["all"]
+            logger.info(f"[all] N={m.count}, Recall@10={m.recall_at_k.get(10, 0):.4f}, MRR={m.mrr_score:.4f}")
 
     return results
 
 
 def evaluate(
-    model,
-    index,
-    dataset_path: str | None = None,
-    images_base: str = "",
-    k_values: list[int] | None = None,
-    image_transform=None,
-    tokenizer=None,
-    k: int = DEFAULT_K,
+    model: Encoder,
+    index: Any,  # Объект с методом search(vec, k)
+    dataset: SearchEvalDataset,
+    device: torch.device,
+    k_values: List[int] | None = None,
     verbose: bool = True,
-) -> dict[str, ModeMetrics]:
-    """Полный пайплайн оценки: модель + ANN-индекс → метрики по трём режимам.
+) -> Dict[str, ModeMetrics]:
+    """
+    Полный пайплайн оценки: модель + ANN-индекс → метрики по трём режимам.
 
     Args:
-        model:            объект, реализующий ``Encoder`` (models/base.py).
-        index:            объект с методом ``search(vec, k) → [(image_id, score)]``.
-        dataset_path:     путь к val_dataset.csv; None → путь по умолчанию.
-        images_base:      префикс для путей изображений, например
-                          ``"data/raw/dataset_1M"``.
-        k_values:         список K для метрик (по умолчанию [1, 5, 10]).
-        image_transform:  callable(PIL.Image) → Tensor(1, C, H, W).
-                          Если None — попытается использовать ``model.preprocess_image``.
-        tokenizer:        callable(str) → Tensor(1, L).
-                          Если None — попытается использовать ``model.tokenize``.
-        k:                количество результатов, запрашиваемых у индекса (≥ max(k_values)).
-        verbose:          логировать прогресс.
+        model: Экземпляр модели, реализующий протокол Encoder.
+        index: Объект ANN-индекса с методом search(query_vec, k).
+        dataset: Экземпляр SearchEvalDataset.
+        device: Устройство для инференса модели.
+        k_values: Список K для метрик (по умолчанию [1, 5, 10]).
+        verbose: Если True, логировать прогресс.
 
     Returns:
-        Словарь ``{mode: ModeMetrics}`` для каждого режима + ключ ``"all"``.
-
-    Example::
-
-        from visual_search.evaluation.evaluate import evaluate
-        from visual_search.models.registry import build_model
-        from visual_search.index.ann import ANNIndex
-
-        model = build_model(config)
-        index = ANNIndex.load("experiments/baseline/index.bin")
-        results = evaluate(model, index, images_base="data/raw/dataset_1M")
-        print(results["txt"].as_flat_dict())
+        Dict[str, ModeMetrics]: Словарь агрегированных метрик.
     """
     if k_values is None:
         k_values = DEFAULT_K_VALUES
+    search_k = max(k_values)
 
-    # Определяем preprocessors: сначала явные аргументы, потом атрибуты модели
-    _image_transform = image_transform or getattr(model, "preprocess_image", None)
-    _tokenizer = tokenizer or getattr(model, "tokenize", None)
-
-    if _image_transform is None:
-        raise ValueError(
-            "image_transform не передан и model.preprocess_image не найден. "
-            "Передайте image_transform явно."
-        )
-    if _tokenizer is None:
-        raise ValueError(
-            "tokenizer не передан и model.tokenize не найден. "
-            "Передайте tokenizer явно."
-        )
-
-    search_k = max(k_values + [k])
-
-    def search_fn(query: ValQuery) -> list[int]:
-        vec = _encode_query(query, model, _tokenizer, _image_transform)
-        hits = index.search(vec, k=search_k)
-        return [image_id for image_id, _ in hits]
+    def search_fn(item: Dict[str, Any]) -> List[int]:
+        """Внутренняя обёртка: кодирует запрос и ищет в индексе."""
+        query_vec = _encode_query_batch([item], model, device)
+        hits = index.search(query_vec, k=search_k)
+        return [int(image_id) for image_id, score in hits]
 
     return evaluate_with_search_fn(
         search_fn=search_fn,
-        dataset_path=dataset_path,
-        images_base=images_base,
+        dataset=dataset,
         k_values=k_values,
         verbose=verbose,
     )
 
 
-def print_report(results: dict[str, ModeMetrics], k: int = DEFAULT_K) -> None:
-    """Вывести красивый текстовый отчёт в stdout."""
+def print_report(results: Dict[str, ModeMetrics], k: int = 10) -> None:
+    """
+    Вывести красивый текстовый отчёт в stdout.
+
+    Args:
+        results: Словарь метрик, возвращаемый функциями evaluate или evaluate_with_search_fn.
+        k: Значение K для отображения в заголовке таблицы (по умолчанию 10).
+    """
     header = f"{'Mode':<12} {'N':>6}  {'R@' + str(k):>8}  {'P@' + str(k):>8}  {'MRR':>8}"
-    print(header)
+    print("\n" + header)
     print("-" * len(header))
     for mode in (*MODES, "all"):
         if mode not in results:
@@ -274,8 +230,9 @@ def print_report(results: dict[str, ModeMetrics], k: int = DEFAULT_K) -> None:
         m = results[mode]
         flat = m.as_flat_dict()
         print(
-            f"{mode:<12} {flat['count']:>6}  "
-            f"{flat.get(f'recall@{k}', 0):>8.3f}  "
-            f"{flat.get(f'precision@{k}', 0):>8.3f}  "
+            f"{mode:<12} {flat['count']:>6}   "
+            f"{flat.get(f'recall@{k}', 0):>8.3f}   "
+            f"{flat.get(f'precision@{k}', 0):>8.3f}   "
             f"{flat['mrr']:>8.3f}"
         )
+    print("-" * len(header) + "\n")

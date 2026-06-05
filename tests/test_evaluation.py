@@ -1,12 +1,18 @@
-"""Тесты модуля оценки: metrics, val_dataset, evaluate.
-
-Не требуют torch, модели или индекса — работают на чистом Python.
+"""Тесты модуля оценки: metrics, SearchEvalDataset, evaluate.
+Работают на чистом Python + минимальные моки PyTorch.
 Запуск: pytest tests/test_evaluation.py -v
 """
 
 from __future__ import annotations
 
 import pytest
+import numpy as np
+import pandas as pd
+import torch
+from pathlib import Path
+from unittest.mock import patch
+from PIL import Image
+
 
 from visual_search.evaluation.metrics import (
     ModeMetrics,
@@ -15,7 +21,8 @@ from visual_search.evaluation.metrics import (
     precision_at_k,
     recall_at_k,
 )
-from visual_search.evaluation.val_dataset import _parse_target_ids
+from visual_search.data.dataset import SearchEvalDataset
+from visual_search.evaluation.evaluate import evaluate_with_search_fn
 
 
 # ---------------------------------------------------------------------------
@@ -132,111 +139,140 @@ class TestAggregate:
 
 
 # ---------------------------------------------------------------------------
-# _parse_target_ids
+# Тесты SearchEvalDataset
 # ---------------------------------------------------------------------------
+class FakeProcessor:
+    """Минимальная заглушка процессора для тестов."""
+    def __call__(self, text=None, images=None, return_tensors='pt', padding='max_length', truncation=True, **kwargs):
+        result = {}
+        if images is not None:
+            n = len(images) if isinstance(images, list) else 1
+            result['pixel_values'] = torch.randn(n, 3, 224, 224)
+        if text is not None:
+            n = len(text) if isinstance(text, list) else 1
+            result['input_ids'] = torch.randint(0, 1000, (n, 77))
+            result['attention_mask'] = torch.ones(n, 77)
+        return result
 
 
-class TestParseTargetIds:
-    def test_set_repr(self):
-        assert _parse_target_ids("{1, 2, 3}") == {1, 2, 3}
+class TestSearchEvalDataset:
+    @pytest.fixture
+    def fake_eval_csv(self, tmp_path: Path) -> Path:
+        eval_csv = tmp_path / 'val.csv'
+        pd.DataFrame({
+            'query_id': [10, 20, 30],
+            'mode': ['txt', 'image', 'multimodal'],
+            'item_id': [1, 2, 3],
+            'image_path': ['img1.jpg', 'img2.jpg', 'img3.jpg'],
+            'txt_query': ['чёрное платье', None, 'платье красное'],
+            'target_images_id': ['1001; 1002', '2001', '3001; 3002'],
+            'param2': ['Платья', 'Верхняя одежда', 'Платья'],
+            'category_name': ['Женская одежда', 'Женская одежда', 'Женская одежда'],
+            'brand': ['Zara', 'H&M', 'Mango'],
+            'cvet': ['Чёрный', 'Синий', 'Красный']
+        }).to_csv(eval_csv, index=False)
+        return eval_csv
 
-    def test_single_id(self):
-        assert _parse_target_ids("{42}") == {42}
+    def test_dataset_length_and_modes(self, fake_eval_csv, tmp_path):
+        ds = SearchEvalDataset(
+            csv_path=str(fake_eval_csv),
+            image_root=str(tmp_path),
+            processor=FakeProcessor()
+        )
+        assert len(ds) == 3
+        
+        fake_img = Image.fromarray(np.zeros((224, 224, 3), dtype=np.uint8))
+        with patch('PIL.Image.open', return_value=fake_img):
+            q_txt = ds[0]
+            q_img = ds[1]
+            q_multi = ds[2]
 
-    def test_semicolon_separated(self):
-        assert _parse_target_ids("1;2;3") == {1, 2, 3}
+        # Проверка TXT
+        assert q_txt['mode'] == 'txt'
+        assert q_txt['query']['pixel_values'] is None
+        assert q_txt['query']['input_ids'] is not None
+        assert q_txt['query']['attention_mask'] is not None
+        assert q_txt['target_ids'] == [1001, 1002]
 
-    def test_comma_separated(self):
-        assert _parse_target_ids("1,2,3") == {1, 2, 3}
+        # Проверка IMAGE
+        assert q_img['mode'] == 'image'
+        assert q_img['query']['pixel_values'] is not None
+        assert q_img['query']['input_ids'] is None
+        assert q_img['target_ids'] == [2001]
 
-    def test_empty_string(self):
-        assert _parse_target_ids("") == set()
-
-    def test_large_ids(self):
-        s = "{1045112250624, 1045109001531, 1045112753893}"
-        result = _parse_target_ids(s)
-        assert result == {1045112250624, 1045109001531, 1045112753893}
+        # Проверка MULTIMODAL
+        assert q_multi['mode'] == 'multimodal'
+        assert q_multi['query']['pixel_values'] is not None
+        assert q_multi['query']['input_ids'] is not None
+        assert q_multi['query'].get('multimodal_alpha') == 0.5
 
 
 # ---------------------------------------------------------------------------
-# ValDataset (требует pandas — пропускаем, если не установлен)
+# Тесты evaluate_with_search_fn
 # ---------------------------------------------------------------------------
+class MockEvalDataset:
+    """Минимальный мок-датасет, имитирующий вывод SearchEvalDataset + eval_collate_fn"""
+    def __init__(self, items):
+        self.items = items
+    def __len__(self):
+        return len(self.items)
+    def __getitem__(self, idx):
+        return self.items[idx]
 
 
-try:
-    import pandas as pd
-    _PANDAS_AVAILABLE = True
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
-
-@pytest.mark.skipif(not _PANDAS_AVAILABLE, reason="pandas не установлен")
-class TestValDataset:
-    """Интеграционный тест — читает реальный val_dataset.csv."""
-
-    def test_loads_and_stats(self):
-        from visual_search.evaluation.val_dataset import ValDataset
-        ds = ValDataset()
-        st = ds.stats()
-        assert st["total"] > 0
-        assert st["image"] + st["txt"] + st["multimodal"] == st["total"]
-
-    def test_getitem_image_mode(self):
-        from visual_search.evaluation.val_dataset import ValDataset
-        ds = ValDataset()
-        # Найдём первый image-запрос
-        q = next(ds.iter_mode("image"))
-        assert q.mode == "image"
-        assert isinstance(q.target_image_ids, set)
-        assert len(q.target_image_ids) > 0
-        assert q.image_path is not None
-        assert q.txt_query is None
-
-    def test_getitem_txt_mode(self):
-        from visual_search.evaluation.val_dataset import ValDataset
-        ds = ValDataset()
-        q = next(ds.iter_mode("txt"))
-        assert q.mode == "txt"
-        assert q.txt_query is not None
-        assert len(q.target_image_ids) > 0
-
-    def test_getitem_multimodal_mode(self):
-        from visual_search.evaluation.val_dataset import ValDataset
-        ds = ValDataset()
-        q = next(ds.iter_mode("multimodal"))
-        assert q.mode == "multimodal"
-        assert q.image_path is not None
-        assert q.txt_query is not None
-
+class TestEvaluateWithSearchFn:
     def test_evaluate_with_mock_search(self):
-        """Smoke-тест: прогон evaluate_with_search_fn с заглушкой поиска."""
-        from visual_search.evaluation.val_dataset import ValDataset
-        from visual_search.evaluation.evaluate import evaluate_with_search_fn
+        # Создаем мок-элементы, идентичные выводу SearchEvalDataset
+        mock_items = [
+            {
+                'mode': 'txt',
+                'target_ids': [1001, 1002],
+                'query': {'input_ids': torch.tensor([1, 2]), 'pixel_values': None},
+                'metadata': {'category_name': 'Платья'}
+            },
+            {
+                'mode': 'image',
+                'target_ids': [2001],
+                'query': {'input_ids': None, 'pixel_values': torch.randn(3, 224, 224)},
+                'metadata': {'category_name': 'Брюки'}
+            }
+        ]
+        dataset = MockEvalDataset(mock_items)
 
         # Поиск всегда возвращает пустой список → все метрики 0
         results = evaluate_with_search_fn(
-            search_fn=lambda q: [],
+            search_fn=lambda item: [],
+            dataset=dataset,
             k_values=[10],
             verbose=False,
         )
+        
         assert "all" in results
         assert results["all"].recall_at_k[10] == pytest.approx(0.0)
         assert results["all"].mrr_score == pytest.approx(0.0)
+        assert results["all"].count == 2
 
     def test_evaluate_perfect_search(self):
-        """Если поиск возвращает все таргеты первыми — mrr=1, recall@1000≈1."""
-        from visual_search.evaluation.val_dataset import ValDataset
-        from visual_search.evaluation.evaluate import evaluate_with_search_fn
+        mock_items = [
+            {
+                'mode': 'txt',
+                'target_ids': [1001, 1002],
+                'query': {'input_ids': torch.tensor([1, 2]), 'pixel_values': None},
+                'metadata': {'category_name': 'Платья'}
+            }
+        ]
+        dataset = MockEvalDataset(mock_items)
 
-        def perfect_search(q):
+        def perfect_search(item):
             # Возвращаем все таргеты на первых позициях
-            return list(q.target_image_ids) + list(range(999_000, 999_000 + 50))
+            return list(item['target_ids']) + [999999]
 
         results = evaluate_with_search_fn(
             search_fn=perfect_search,
-            # k=1000 — гарантированно вместит все таргеты (max ~20 в датасете)
-            k_values=[1000],
+            dataset=dataset,
+            k_values=[10],
             verbose=False,
         )
-        assert results["all"].recall_at_k[1000] == pytest.approx(1.0)
+        
+        assert results["all"].recall_at_k[10] == pytest.approx(1.0)
         assert results["all"].mrr_score == pytest.approx(1.0)
