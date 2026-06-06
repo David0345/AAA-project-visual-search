@@ -8,6 +8,7 @@
 """
 
 from visual_search.models.base import Encoder
-from visual_search.models.registry import build_model
+from visual_search.models.registry import build_model, register, get_processor
+from visual_search.models.encoders import RuCLIPEncoder
 
-__all__ = ["Encoder", "build_model"]
+__all__ = ["Encoder", "build_model", "register", "get_processor", "RuCLIPEncoder"]

@@ -1,8 +1,30 @@
 # Experiment = композиция под-конфигов. Поменять только LR -> новый файл в
 # train/, остальное переиспользуется. Так растёт сетка экспериментов без
 # дублирования (см. §7 PROJECT_STRUCTURE).
-name: clip_baseline
+# configs/experiment/clip_baseline.yaml
 defaults:
-  data: baseline
-  model: clip_vit_b32
-  train: adamw_cosine
+  - /data: baseline
+  - /model: clip_vit_b32
+  - /loss: infonce
+  - /optimizer: adamw
+  - /scheduler: cosine
+  - _self_
+
+train:
+  epochs: 5
+  batch_size: 32
+  gradient_accumulation: 1
+  max_grad_norm: 1.0
+  log_every: 50
+  checkpoint_every: 1000
+  amp: true
+  resume_from: null
+
+output_dir: ${hydra:runtime.output_dir}
+
+seed:
+  fix: true
+  seed: 42
+  deterministic_algorithms: false
+
+device: auto

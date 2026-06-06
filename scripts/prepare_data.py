@@ -26,6 +26,7 @@ from omegaconf import DictConfig, OmegaConf
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from visual_search.common.seed import set_seed
 from visual_search.common.logging import get_logger
+from visual_search.common.io import PROJECT_ROOT, RAW_DIR, INTERIM_DIR, PROCESSED_DIR
 from visual_search.data.prepare.build_train import prepare
 
 log = get_logger(__name__)
@@ -39,16 +40,20 @@ def main(config: DictConfig) -> None:
         set_seed(config.seed.seed, deterministic=config.seed.get("deterministic_algorithms", False))
 
     data_config = config.data
-    data_dir = Path(data_config.get('data_dir', 'data/raw/dataset_1M'))
-    valid_ids = Path(data_config.get('valid_ids', 'src/visual_search/data/eda/valid_image_ids.csv'))
-    val_csv_raw = Path(data_config.get('val_csv_raw', 'src/visual_search/evaluation/val_dataset/val_dataset.csv'))
-    output_dir = Path(data_config.get('output_dir', 'data/processed'))
+    data_dir = Path(data_config.get('data_dir', RAW_DIR / 'dataset_1M'))
+    valid_ids = Path(data_config.get('valid_ids', INTERIM_DIR / 'valid_image_ids.csv'))
+    val_csv_raw = Path(data_config.get('val_csv_raw', PROJECT_ROOT / 'src/visual_search/evaluation/val_dataset/val_dataset.csv'))
+    output_dir = Path(data_config.get('output_dir', PROCESSED_DIR))
 
     if not data_dir.exists():
         log.error(f'Data directory not found: {data_dir}')
+        log.error(f'Expected raw data at {RAW_DIR}. Check your config or download the dataset.')
         sys.exit(1)
     if not valid_ids.exists():
         log.error(f'Valid IDs file not found: {valid_ids}')
+        sys.exit(1)
+    if not val_csv_raw.exists():
+        log.error(f'Raw validation CSV not found: {val_csv_raw}')
         sys.exit(1)
 
     output_dir.parent.mkdir(parents=True, exist_ok=True)

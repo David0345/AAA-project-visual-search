@@ -6,8 +6,7 @@
 
 from __future__ import annotations
 import hydra
-from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
+from omegaconf import DictConfig
 import torch
 
 from visual_search.training.train import run

@@ -1,13 +1,6 @@
-"""Оркестрация прогона: конфиг -> данные + модель + loop -> чекпойнт.
-
+"""
+Оркестрация прогона: конфиг -> данные + модель + loop -> чекпойнт.
 Это логика; запускается тонкой обёрткой scripts/train.py.
-
-Зависимости, которые должны быть реализованы до запуска:
-  - visual_search.data.datamodule.build_dataloaders(data_cfg)
-        -> (train_loader, val_loader | None)
-        Батч: {"images": Tensor(B,C,H,W), "tokens": Tensor(B,L)}
-  - config.train.loss._target_ — класс nn.Module
-        forward(image_embeds, text_embeds) -> scalar
 """
 
 from __future__ import annotations
@@ -25,6 +18,7 @@ from visual_search.training.checkpoint import load_checkpoint, save_checkpoint
 from visual_search.training.loop import train_one_epoch, validate
 from visual_search.training.optim import build_optimizer, build_scheduler
 from visual_search.training.tracking import MetricsTracker
+from visual_search.data.datamodule import build_dataloaders
 
 log = get_logger(__name__)
 
@@ -37,9 +31,7 @@ def run(config: DictConfig, device: torch.device) -> None:
     model = model.to(device)
     log.info("Model %s (embed_dim=%d) on %s", config.model.name, model.embed_dim, device)
 
-    from visual_search.data.datamodule import build_dataloaders
-
-    train_loader, val_loader = build_dataloaders(config.data)
+    train_loader, val_loader = build_dataloaders(config)
 
     loss_fn = instantiate(config.train.loss).to(device)
 

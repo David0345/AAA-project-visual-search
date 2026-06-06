@@ -14,7 +14,7 @@ from visual_search.models.registry import get_processor
 log = logging.getLogger(__name__)
 
 
-def create_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, DataLoader]:
+def build_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Создаёт train/val/test DataLoader'ы из конфига.
 
     Args:

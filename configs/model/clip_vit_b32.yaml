@@ -1,6 +1,3 @@
-# Под-конфиг модели. На него ссылаются experiment-конфиги.
-# Имя резолвится через visual_search.models.registry.build_model.
-name: clip_vit_b32
-embed_dim: 512
-pretrained: openai        # источник весов бэкбона (open_clip)
-freeze_backbone: false    # дотюним целиком; true -> учим только головы
+name: clip_vit_b32 # Ключ для реестра (registry.py)   
+pretrained:  openai/clip-vit-base-patch32 # HF id для загрузки весов
+freeze: true # true, если сначала zero-shot baseline

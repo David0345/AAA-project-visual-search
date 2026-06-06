@@ -1,6 +1,8 @@
-"""Проекционные головы (если бэкбон не даёт нужную размерность напрямую).
-
-TODO(Обучение): projection head image/text -> общий embed_dim, если нужно.
+"""Проекционные головы.
+Для RuCLIP (CLIPModel из transformers) проекционные головы уже встроены
+в саму модель (visual_projection и text_projection) и применяются внутри
+get_image_features / get_text_features.
+Поэтому отдельный модуль для голов не требуется.
 """
 
 from __future__ import annotations

@@ -1,7 +1,8 @@
 defaults:
   - data: baseline
   - model: clip_vit_b32
-  - train: adamw_cosine
+  - optimizer: adamw_cosine
+  - loss: infonce
   - random_seed: random_seed
   - experiment: null
   - _self_
