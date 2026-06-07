@@ -1,0 +1,10 @@
+# EXP-04: Sweep по lr на мультиязычной модели.
+# Запуск через Hydra multirun:
+#   uv run python scripts/train.py +experiment=xlm_clip_lr_sweep \
+#     --multirun train.optimizer.lr=1e-6,5e-6,2e-5
+name: xlm_clip_lr_sweep
+defaults:
+  - data: baseline
+  - model: xlm_clip_vit_b32
+  - train: adamw_warmup_cosine
+  - _self_

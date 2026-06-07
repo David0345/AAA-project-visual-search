@@ -1,0 +1,8 @@
+# EXP-02: Multilingual CLIP — главный кандидат для рус. запросов
+# Запуск: uv run python scripts/train.py +experiment=xlm_clip_baseline
+name: xlm_clip_baseline
+defaults:
+  - data: baseline
+  - model: xlm_clip_vit_b32
+  - train: adamw_warmup_cosine
+  - _self_

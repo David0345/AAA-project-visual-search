@@ -1,6 +1,8 @@
-# Под-конфиг модели. На него ссылаются experiment-конфиги.
-# Имя резолвится через visual_search.models.registry.build_model.
+# English CLIP ViT-B/32 (OpenAI).
+# Хорошо работает на визуальных запросах (image mode).
+# Для русского текста — хуже xlm_clip_vit_b32, но быстрее обучается.
 name: clip_vit_b32
 embed_dim: 512
-pretrained: openai        # источник весов бэкбона (open_clip)
-freeze_backbone: false    # дотюним целиком; true -> учим только головы
+pretrained: openai
+freeze_backbone: false
+grad_checkpointing: false

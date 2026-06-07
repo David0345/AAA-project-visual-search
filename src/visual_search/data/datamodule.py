@@ -70,3 +70,12 @@ def create_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, Data
     log.info(f'DataLoaders created: train={len(train_ds)}, val={len(val_ds)}, test={len(test_ds)}')
 
     return train_loader, val_loader, test_loader
+
+
+def build_dataloaders(config) -> tuple:
+    """Алиас для train.py: возвращает (train_loader, val_loader).
+
+    Принимает полный Hydra-конфиг или DictConfig.
+    """
+    train_loader, val_loader, _ = create_dataloaders(config)
+    return train_loader, val_loader

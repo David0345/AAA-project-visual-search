@@ -10,8 +10,28 @@ project: avito_visual_search
 device: auto  # auto | cuda | cpu
 output_dir: ${hydra:runtime.output_dir}
 
+# WandB — выключен по умолчанию.
+# Включить: wandb.enabled=true wandb.project=avito-visual-search
+# Или задать env: export WANDB_PROJECT=avito-visual-search
+wandb:
+  enabled: false
+  project: avito-visual-search
+  entity: null      # ваш username / org
+  tags: []
+  notes: ""
+  run_name: null    # null = берётся из имени директории
+
+eval:
+  checkpoint_path: ???    # обязательный, задаётся через CLI
+  index_path: ???
+  output_dir: ${output_dir}/eval_results
+  k_values: [1, 5, 10]
+
 hydra:
   run:
     dir: experiments/${now:%Y-%m-%d}/${now:%H-%M-%S}/${hydra:job.name}
   job:
-    chdir: false  # рабочая директория автоматически меняется на папку запуска
+    chdir: false
+  sweep:
+    dir: experiments/sweep_${now:%Y-%m-%d}
+    subdir: ${hydra:job.override_dirname}

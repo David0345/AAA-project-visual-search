@@ -1,0 +1,29 @@
+# AdamW + warmup + cosine decay — рекомендуется для CLIP fine-tuning.
+# Первые warmup_steps шагов lr растёт линейно от 0, потом — косинусный decay.
+epochs: 5
+gradient_accumulation: 1
+max_grad_norm: 1.0
+checkpoint_every: 500
+amp: true         # AMP (bf16/fp16) — включить на GPU
+
+log_every: 50
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 5e-6
+  weight_decay: 0.01
+  eps: 1e-8
+  betas: [0.9, 0.98]   # CLIP-стандарт (vs 0.999 у обычного AdamW)
+
+# Линейный warmup + косинусный decay через SequentialLR
+warmup_steps: 200   # ~1 эпоха на маленьком датасете
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  T_max: ${train.epochs}
+  eta_min: 1e-7
+
+loss:
+  _target_: visual_search.models.losses.InfoNCELoss
+  temperature: 0.07
+  learnable_temperature: true

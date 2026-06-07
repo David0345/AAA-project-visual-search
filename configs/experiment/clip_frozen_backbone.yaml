@@ -1,0 +1,16 @@
+# EXP-03: Замороженный backbone — проверяем, нужен ли full fine-tune
+# Плюсы: быстрее, меньше GPU, меньше переобучение на маленьких данных.
+# Запуск: uv run python scripts/train.py +experiment=clip_frozen_backbone
+name: clip_frozen_backbone
+defaults:
+  - data: baseline
+  - model: clip_vit_b32
+  - train: adamw_cosine
+  - _self_
+
+model:
+  freeze_backbone: true
+
+train:
+  optimizer:
+    lr: 1e-4  # frozen backbone -> проекционным головам можно lr повыше

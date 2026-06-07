@@ -109,10 +109,19 @@ class SearchEvalDataset(Dataset):
         return len(self.df)
 
     def _parse_target_ids(self, target_str: str) -> List[int]:
-        """Парсит строку вида "123; 456; 789" в список int."""
-        if pd.isna(target_str) or not target_str.strip():
+        """Парсит строку target_images_id в список int.
+
+        Поддерживает форматы:
+            "{1045112250624, 1045109001531}"  — Python set repr (основной)
+            "123;456;789"                     — устаревший разделитель «;»
+        """
+        if pd.isna(target_str) or not str(target_str).strip():
             return []
-        return [int(x.strip()) for x in str(target_str).split(";") if x.strip()]
+        raw = str(target_str).strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            return [int(x.strip()) for x in raw[1:-1].split(",") if x.strip()]
+        sep = ";" if ";" in raw else ","
+        return [int(x.strip()) for x in raw.split(sep) if x.strip()]
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         row = self.df.iloc[idx]
