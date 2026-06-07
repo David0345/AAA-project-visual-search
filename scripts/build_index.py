@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
+import argparse
+
+from visual_search.index.build_index import build_index
+
 from visual_search.common.logging import get_logger
 
 logger = get_logger(__name__)
-
-from visual_search.index.build_index import build_index
 
 
 def main() -> None:
