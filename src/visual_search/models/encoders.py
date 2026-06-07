@@ -25,7 +25,7 @@ class RuCLIPEncoder(nn.Module):
         pretrained_name = config.get("pretrained", "ai-forever/ruclip-vit-base-patch32-224")
         self.model = CLIPModel.from_pretrained(pretrained_name)
 
-        self.embed_dim = self.model.config.projection_dim 
+        self.embed_dim = self.model.config.projection_dim
 
         # Флаг для заморозки весов (для zero-shot baseline)
         self.freeze = config.get("freeze", False)

@@ -5,8 +5,22 @@ defaults:
   - scheduler: cosine
   - loss: infonce
   - random_seed: random_seed
-  - experiment: null
   - _self_
+  - experiment: null
+
+# ВСЁ, ЧТО ОТНОСИТСЯ К ОБУЧЕНИЮ
+train:
+  epochs: 10
+  gradient_accumulation: 1
+  max_grad_norm: 1.0
+  log_every: 50
+  checkpoint_every: 1000
+  amp: true
+  resume_from: null
+  
+  optimizer: ${optimizer}
+  scheduler: ${scheduler}
+  loss: ${loss}
 
 project: avito_visual_search
 device: auto  # auto | cuda | cpu
