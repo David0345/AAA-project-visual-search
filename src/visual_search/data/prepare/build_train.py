@@ -6,10 +6,10 @@
 словари синонимов категорий и транслитераций брендов.
 
 Пример запуска:
-    python prepare_train_data.py \
-        --data-dir dataset_1M \
-        --valid-ids valid_image_ids.csv \
-        --output train.parquet
+    python src/visual_search/data/prepare/build_train.py \
+        --data-dir data/raw/dataset_1M \
+        --valid-ids src/visual_search/data/eda/valid_image_ids.csv \
+        --output data/interim/train.parquet
 """
 
 import argparse
@@ -17,8 +17,8 @@ import re
 from pathlib import Path
 import pandas as pd
 
-from category_synonyms import CATEGORY_SYNONYMS
-from brand_translit import BRAND_RU
+from visual_search.data.prepare.category_synonyms import CATEGORY_SYNONYMS
+from visual_search.data.prepare.brand_translit import BRAND_RU
 
 
 def load_and_filter_data(data_dir: Path, valid_ids_path: Path):

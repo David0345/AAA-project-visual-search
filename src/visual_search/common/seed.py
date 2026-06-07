@@ -1,9 +1,4 @@
-"""Фиксация сидов для воспроизводимости прогонов.
-
-Один и тот же конфиг + тот же сид -> тот же результат (см. §7 PROJECT_STRUCTURE).
-
-TODO(common): seed_everything(seed) — random, numpy, torch, cudnn.
-"""
+"""Фиксация сидов для воспроизводимости прогонов."""
 
 from __future__ import annotations
 import os
@@ -24,3 +19,6 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
         torch.use_deterministic_algorithms(True, warn_only=True)
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+
+
+set_seed = seed_everything
