@@ -1,0 +1,30 @@
+defaults:
+  - /data: baseline    
+  - /model: clip_vit_b32
+  - /loss: infonce
+  - /optimizer: adamw
+  - /scheduler: cosine
+  - _self_
+
+# --- Переопределения для быстрого теста ---
+data:
+  train_path: data/processed/train_mini.parquet # Путь к мини-файлу
+  batch_size: 16                                # Маленький батч
+  num_workers: 0
+  pin_memory: false                             # Откл для CPU/отладки
+
+train:
+  epochs: 2                                     # Всего 2 эпохи
+  gradient_accumulation: 1
+  max_grad_norm: 1.0
+  log_every: 5                                  # Логируем каждый 5-й шаг, чтобы видеть прогресс
+  checkpoint_every: 10                          # Сохраняем чекпоинт каждые 10 шагов
+  amp: true                                     # Оставляем true, если есть GPU (иначе false)
+
+output_dir: experiments/smoke_test_run
+device: auto
+
+random_seed:
+  fix: true
+  seed: 42
+  deterministic_algorithms: false

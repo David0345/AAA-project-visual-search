@@ -27,7 +27,7 @@ def build_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, DataL
 
     train_ds = ContrastiveImageTextDataset(
         parquet_path=config.data.train_path,
-        image_root=config.data.image_root,
+        image_root=config.data.images_root,
         processor=processor,
         seed=config.seed.seed if hasattr(config, 'seed') else 42,
         max_queries_per_item=config.data.get('max_queries_per_item', None),
