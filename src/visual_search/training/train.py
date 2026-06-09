@@ -39,7 +39,7 @@ def run(config: DictConfig, device: torch.device) -> None:
 
     from visual_search.data.datamodule import build_dataloaders
 
-    train_loader, val_loader = build_dataloaders(config.data)
+    train_loader, val_loader = build_dataloaders(config)
 
     loss_fn = instantiate(config.train.loss).to(device)
 

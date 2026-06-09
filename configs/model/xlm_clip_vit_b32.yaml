@@ -1,0 +1,11 @@
+# Multilingual CLIP — ViT-B/32 с xlm-roberta text tower.
+# Обучен на LAION-5B, поддерживает русский язык.
+# Рекомендуется как стартовая точка для данных Avito.
+#
+# open_clip name: ViT-B-32
+# pretrained tag: laion5b_s13b_b90k
+name: xlm_clip_vit_b32
+embed_dim: 512
+pretrained: laion5b_s13b_b90k
+freeze_backbone: false
+grad_checkpointing: false

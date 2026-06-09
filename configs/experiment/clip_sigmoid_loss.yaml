@@ -1,0 +1,15 @@
+# EXP-05: Sigmoid loss (SigLIP) вместо InfoNCE.
+# SigLIP лучше работает при batch_size < 128 (не нужен B×B normalizer).
+# Запуск: uv run python scripts/train.py +experiment=clip_sigmoid_loss
+name: clip_sigmoid_loss
+defaults:
+  - data: baseline
+  - model: xlm_clip_vit_b32
+  - train: adamw_warmup_cosine
+  - _self_
+
+train:
+  loss:
+    _target_: visual_search.models.losses.SigmoidLoss
+    temperature: 0.07
+    learnable: true

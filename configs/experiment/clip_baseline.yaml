@@ -1,8 +1,8 @@
-# Experiment = композиция под-конфигов. Поменять только LR -> новый файл в
-# train/, остальное переиспользуется. Так растёт сетка экспериментов без
-# дублирования (см. §7 PROJECT_STRUCTURE).
+# EXP-01: Стартовый бейзлайн — EN CLIP, полный fine-tune, lr=5e-6
+# Запуск: uv run python scripts/train.py +experiment=clip_baseline
 name: clip_baseline
 defaults:
-  data: baseline
-  model: clip_vit_b32
-  train: adamw_cosine
+  - data: baseline
+  - model: clip_vit_b32
+  - train: adamw_cosine
+  - _self_
