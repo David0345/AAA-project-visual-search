@@ -40,8 +40,8 @@ _MODEL_MAP: dict[str, tuple[str, str]] = {
     "clip_vit_b32":     ("ViT-B-32",  "openai"),
     "clip_vit_b16":     ("ViT-B-16",  "openai"),
     "clip_vit_l14":     ("ViT-L-14",  "openai"),
-    # Multilingual CLIP на LAION-5B — поддерживает русский язык
-    "xlm_clip_vit_b32": ("ViT-B-32",  "laion5b_s13b_b90k"),
+    # Multilingual CLIP: xlm-roberta text tower, знает русский
+    "xlm_clip_vit_b32": ("xlm-roberta-base-ViT-B-32", "laion5b_s13b_b90k"),
 }
 
 

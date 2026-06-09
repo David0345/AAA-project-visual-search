@@ -70,7 +70,7 @@ def get_processor(pretrained: str = "openai") -> "_CLIPProcessorAdapter":
     # Архитектура по тегу (все наши модели — ViT-B-32)
     arch_map = {
         "openai":             "ViT-B-32",
-        "laion5b_s13b_b90k":  "ViT-B-32",
+        "laion5b_s13b_b90k":  "xlm-roberta-base-ViT-B-32",
     }
     arch = arch_map.get(pretrained, "ViT-B-32")
 

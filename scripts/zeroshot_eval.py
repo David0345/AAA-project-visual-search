@@ -66,7 +66,6 @@ def main() -> None:
 
     # Val dataset
     from visual_search.evaluation.val_dataset import ValDataset
-    from visual_search.evaluation.evaluate import evaluate_with_search_fn
 
     ds_kwargs = {"csv_path": args.val_csv} if args.val_csv else {}
     dataset = ValDataset(**ds_kwargs, images_base=args.images_base)
@@ -192,13 +191,31 @@ def main() -> None:
         hits = index.search(vec, k=max(args.k_values))
         return [iid for iid, _ in hits]
 
-    # Оцениваем
+    # Оцениваем — вручную по режимам (не зависим от SearchEvalDataset)
     log.info("Запускаем оценку ...")
-    results = evaluate_with_search_fn(
-        search_fn=search_fn,
-        k_values=args.k_values,
-        verbose=True,
-    )
+    from visual_search.evaluation.metrics import aggregate, ModeMetrics
+    MODES = ("image", "txt", "multimodal")
+    results: dict[str, ModeMetrics] = {}
+    all_ranks, all_targets, all_cats = [], [], []
+
+    for mode in MODES:
+        queries = dataset.get_by_mode(mode)
+        if not queries:
+            continue
+        ranks, targets, cats = [], [], []
+        for q in queries:
+            ranked = search_fn(q)
+            ranks.append(ranked)
+            targets.append(q.target_image_ids)
+            cats.append(str(q.metadata.get("param2") or "unknown"))
+        results[mode] = aggregate(ranks, targets, args.k_values, cats, mode=mode)
+        m = results[mode]
+        log.info("[%s] n=%d  recall@10=%.3f  precision@10=%.3f  mrr=%.3f",
+                 mode, m.count,
+                 m.recall_at_k.get(10, 0), m.precision_at_k.get(10, 0), m.mrr_score)
+        all_ranks += ranks; all_targets += targets; all_cats += cats
+
+    results["all"] = aggregate(all_ranks, all_targets, args.k_values, all_cats, mode="all")
 
     # Выводим таблицу
     from visual_search.evaluation.evaluate import print_report
