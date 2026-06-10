@@ -28,6 +28,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from visual_search.common.seed import set_seed
+from visual_search.common.io import PROJECT_ROOT, RAW_DIR, INTERIM_DIR, EXPERIMENTS_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -301,8 +303,8 @@ def train_epoch(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--train-parquet", default="data/interim/mini_train.parquet")
-    parser.add_argument("--images-base", default="data/raw/dataset_1M")
+    parser.add_argument("--train-parquet", default=INTERIM_DIR / "mini_train.parquet")
+    parser.add_argument("--images-base", default=RAW_DIR / "dataset_1M")
     parser.add_argument("--val-csv", default=None,
                         help="Путь к val_dataset.csv (None = встроенный)")
     parser.add_argument("--device", default="auto",
@@ -316,9 +318,11 @@ def main() -> None:
                         help="Лимит шагов per epoch (для быстрой проверки)")
     parser.add_argument("--no-eval", action="store_true",
                         help="Пропустить eval после каждой эпохи (быстрее)")
-    parser.add_argument("--out-dir", default="experiments/finetune_mini")
+    parser.add_argument("--out-dir", default=EXPERIMENTS_DIR / "finetune_mini")
     parser.add_argument("--k-values", nargs="+", type=int, default=[1, 5, 10])
     args = parser.parse_args()
+
+    set_seed(42, deterministic=False)
 
     # --- Device ---
     if args.device == "auto":
@@ -373,10 +377,7 @@ def main() -> None:
     )
 
     # --- Val CSV ---
-    val_csv = args.val_csv or str(
-        Path(__file__).parent.parent
-        / "src/visual_search/evaluation/val_dataset/val_dataset.csv"
-    )
+    val_csv = args.val_csv or str(PROJECT_ROOT / "src/visual_search/evaluation/val_dataset/val_dataset.csv")
 
     # --- Выход ---
     out_dir = Path(args.out_dir)

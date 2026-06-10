@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 import hydra
-from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
+from omegaconf import DictConfig
 import torch
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from visual_search.training.train import run
 from visual_search.common.seed import set_seed
 
