@@ -26,10 +26,10 @@ serving = [
     "uvicorn>=0.29",
     "pydantic>=2.6",
 ]
-
-[project.optional-dependencies.experiments]
 # pip install -e ".[experiments]" или uv sync --extra experiments
-wandb = ["wandb>=0.16"]
+experiments = [
+    "wandb>=0.16",
+]
 
 [dependency-groups]
 dev = [

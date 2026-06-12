@@ -30,13 +30,13 @@ class ContrastiveImageTextDataset(Dataset):
     def __init__(
         self,
         parquet_path: str,
-        image_root: str,
+        images_root: str,
         processor: CLIPProcessor,
         seed: int = 42,
         max_queries_per_item: Optional[int] = None,
     ):
         self.df = pd.read_parquet(parquet_path)
-        self.image_root = Path(image_root)
+        self.images_root = Path(images_root)
         self.processor = processor
         self.rng = torch.Generator()
         self.rng.manual_seed(seed)
@@ -56,7 +56,7 @@ class ContrastiveImageTextDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         row = self.df.iloc[idx]
 
-        img_path = self.image_root / row['title_image_path']
+        img_path = self.images_root / row['title_image_path']
         image = Image.open(img_path).convert('RGB')
 
         queries = row['queries']
@@ -97,11 +97,11 @@ class SearchEvalDataset(Dataset):
     def __init__(
         self,
         csv_path: str,
-        image_root: str,
+        images_root: str,
         processor: CLIPProcessor,
     ):
         self.df = pd.read_csv(csv_path)
-        self.image_root = Path(image_root)
+        self.images_root = Path(images_root)
         self.processor = processor
         log.info(f'Loaded SearchEvalDataset: {len(self.df)} queries from {csv_path}')
 
@@ -137,14 +137,14 @@ class SearchEvalDataset(Dataset):
             query['attention_mask'] = inputs['attention_mask'].squeeze(0)
 
         elif mode == 'image':
-            img_path = self.image_root / row['image_path']
+            img_path = self.images_root / row['image_path']
             image = Image.open(img_path).convert('RGB')
             inputs = self.processor(images=[image], return_tensors='pt')
             query['pixel_values'] = inputs['pixel_values'].squeeze(0)
 
         elif mode == 'multimodal':
             # Стратегия (может поменяем): энкодим раздельно, суммируем эмбеддинги с весом α
-            img_path = self.image_root / row['image_path']
+            img_path = self.images_root / row['image_path']
             image = Image.open(img_path).convert('RGB')
             text = str(row['txt_query'])
 

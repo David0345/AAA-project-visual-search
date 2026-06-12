@@ -27,7 +27,7 @@ def create_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, Data
 
     train_ds = ContrastiveImageTextDataset(
         parquet_path=config.data.train_path,
-        image_root=config.data.image_root,
+        images_root=config.data.images_root,
         processor=processor,
         seed=config.seed.seed if hasattr(config, 'seed') else 42,
         max_queries_per_item=config.data.get('max_queries_per_item', None),
@@ -35,13 +35,13 @@ def create_dataloaders(config: DictConfig) -> Tuple[DataLoader, DataLoader, Data
 
     val_ds = SearchEvalDataset(
         csv_path=config.data.val_path,
-        image_root=config.data.image_root,
+        images_root=config.data.images_root,
         processor=processor,
     )
 
     test_ds = SearchEvalDataset(
         csv_path=config.data.test_path,
-        image_root=config.data.image_root,
+        images_root=config.data.images_root,
         processor=processor,
     )
 

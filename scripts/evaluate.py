@@ -40,8 +40,8 @@ logger = get_logger(__name__)
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(config: DictConfig) -> None:
-    if config.seed.get("fix", True):
-        set_seed(config.seed.seed, deterministic=config.seed.get("deterministic_algorithms", False))
+    if config.random_seed.get("fix", True):
+        set_seed(config.random_seed.seed, deterministic=config.random_seed.get("deterministic_algorithms", False))
 
     if config.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,7 +75,7 @@ def main(config: DictConfig) -> None:
 
     dataset = SearchEvalDataset(
         csv_path=config.data.val_path,
-        image_root=config.data.images_root,
+        images_root=config.data.images_root,
         processor=processor,
     )
 
