@@ -42,6 +42,11 @@ _MODEL_MAP: dict[str, tuple[str, str]] = {
     "clip_vit_l14":     ("ViT-L-14",  "openai"),
     # Multilingual CLIP: xlm-roberta text tower, знает русский
     "xlm_clip_vit_b32": ("xlm-roberta-base-ViT-B-32", "laion5b_s13b_b90k"),
+    # SigLIP 2 — мультиязычный (вкл. русский), сильнее базового CLIP
+    "siglip2_b16_256":  ("ViT-B-16-SigLIP2-256", "webli"),
+    "siglip2_l16_256":  ("ViT-L-16-SigLIP2-256", "webli"),
+    # Marqo-FashionSigLIP — доменная (мода), АНГЛИЙСКАЯ (нужен перевод RU→EN)
+    "marqo_fashion_siglip": ("hf-hub:Marqo/marqo-fashionSigLIP", ""),
 }
 
 
@@ -79,6 +84,10 @@ class _OpenCLIPEncoder(nn.Module):
 
         model_name, default_pretrained = _get_open_clip_name(config["name"])
         pretrained = config.get("pretrained", default_pretrained)
+        # hf-hub:* модели (напр. Marqo) несут веса в самом имени → pretrained=None;
+        # пустой тег тоже трактуем как None, чтобы не загрузить случайные веса
+        if model_name.startswith("hf-hub:") or not pretrained:
+            pretrained = None
 
         log.info("Загружаем open_clip: arch=%s pretrained=%s", model_name, pretrained)
         model, _, preprocess = open_clip.create_model_and_transforms(
@@ -90,8 +99,21 @@ class _OpenCLIPEncoder(nn.Module):
         self._preprocess = preprocess
         self._tokenizer = tokenizer
 
-        # Native embed_dim из бэкбона; config может переопределить для проверки
-        native_dim = model.visual.output_dim
+        # Native embed_dim из бэкбона; config может переопределить для проверки.
+        # У TimmModel (SigLIP2) нет .output_dim → пробуем несколько источников,
+        # в крайнем случае определяем пробным прогоном картинки.
+        native_dim = getattr(model.visual, "output_dim", None)
+        if native_dim is None:
+            tp = getattr(model, "text_projection", None)
+            if isinstance(tp, torch.nn.Parameter):
+                native_dim = tp.shape[1]
+            elif tp is not None and hasattr(tp, "out_features"):
+                native_dim = tp.out_features
+        if native_dim is None:
+            img_sz = getattr(model.visual, "image_size", 224)
+            hw = img_sz if isinstance(img_sz, int) else img_sz[0]
+            with torch.no_grad():
+                native_dim = model.encode_image(torch.zeros(1, 3, hw, hw)).shape[-1]
         cfg_dim = config.get("embed_dim")
         if cfg_dim and cfg_dim != native_dim:
             log.warning(
@@ -209,4 +231,19 @@ def _clip_vit_l14(config: dict[str, Any]) -> _OpenCLIPEncoder:
 
 @register("xlm_clip_vit_b32")
 def _xlm_clip_vit_b32(config: dict[str, Any]) -> _OpenCLIPEncoder:
+    return _OpenCLIPEncoder(config)
+
+
+@register("siglip2_b16_256")
+def _siglip2_b16_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
+    return _OpenCLIPEncoder(config)
+
+
+@register("siglip2_l16_256")
+def _siglip2_l16_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
+    return _OpenCLIPEncoder(config)
+
+
+@register("marqo_fashion_siglip")
+def _marqo_fashion_siglip(config: dict[str, Any]) -> _OpenCLIPEncoder:
     return _OpenCLIPEncoder(config)
