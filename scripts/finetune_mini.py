@@ -399,6 +399,8 @@ def append_ledger(run_log: dict, ledger_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--model", default="xlm_clip_vit_b32",
+                        help="имя модели из registry (xlm_clip_vit_b32, siglip2_b16_256, siglip2_l16_256, ...)")
     parser.add_argument("--train-parquet", default=INTERIM_DIR / "mini_train.parquet")
     parser.add_argument("--images-base", default=RAW_DIR / "dataset_1M")
     parser.add_argument("--val-csv", default=None,
@@ -465,13 +467,13 @@ def main() -> None:
     from visual_search.models import encoders  # noqa — регистрация
 
     model_config = {
-        "name": "xlm_clip_vit_b32",
+        "name": args.model,
         "freeze_text": args.freeze_text,
         "freeze_visual": args.freeze_visual,
         "freeze_backbone": args.freeze_backbone,
         "grad_checkpointing": args.grad_checkpointing,
     }
-    log.info("Загружаем xlm_clip_vit_b32 (config=%s) ...",
+    log.info("Загружаем %s (config=%s) ...", args.model,
              {k: v for k, v in model_config.items() if v and k != "name"})
     model = build_model(model_config).to(device)
     log.info("embed_dim=%d", model.embed_dim)
