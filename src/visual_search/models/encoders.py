@@ -43,8 +43,10 @@ _MODEL_MAP: dict[str, tuple[str, str]] = {
     # Multilingual CLIP: xlm-roberta text tower, знает русский
     "xlm_clip_vit_b32": ("xlm-roberta-base-ViT-B-32", "laion5b_s13b_b90k"),
     # SigLIP 2 — мультиязычный (вкл. русский), сильнее базового CLIP
-    "siglip2_b16_256":  ("ViT-B-16-SigLIP2-256", "webli"),
-    "siglip2_l16_256":  ("ViT-L-16-SigLIP2-256", "webli"),
+    "siglip2_b16_256":     ("ViT-B-16-SigLIP2-256", "webli"),
+    "siglip2_l16_256":     ("ViT-L-16-SigLIP2-256", "webli"),
+    "siglip2_so400m_256":  ("ViT-SO400M-16-SigLIP2-256", "webli"),  # ~400M
+    "siglip2_gopt_256":    ("ViT-gopt-16-SigLIP2-256", "webli"),    # ~1B
     # Marqo-FashionSigLIP — доменная (мода), АНГЛИЙСКАЯ (нужен перевод RU→EN)
     "marqo_fashion_siglip": ("hf-hub:Marqo/marqo-fashionSigLIP", ""),
 }
@@ -241,6 +243,16 @@ def _siglip2_b16_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
 
 @register("siglip2_l16_256")
 def _siglip2_l16_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
+    return _OpenCLIPEncoder(config)
+
+
+@register("siglip2_so400m_256")
+def _siglip2_so400m_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
+    return _OpenCLIPEncoder(config)
+
+
+@register("siglip2_gopt_256")
+def _siglip2_gopt_256(config: dict[str, Any]) -> _OpenCLIPEncoder:
     return _OpenCLIPEncoder(config)
 
 
