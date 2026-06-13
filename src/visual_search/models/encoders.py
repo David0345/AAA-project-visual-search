@@ -111,23 +111,43 @@ class _OpenCLIPEncoder(nn.Module):
 
     # -- freezing helpers -----------------------------------------------
 
+    def _freeze_text_tower(self) -> None:
+        """Заморозить текстовую башню для обеих архитектур open_clip.
+
+        CustomTextCLIP (напр. xlm-roberta-ViT) держит текст в `.text`;
+        обычный CLIP — в `.transformer` + token/positional embeddings, ln_final,
+        text_projection. Замораживаем то, что есть.
+        """
+        text_mod = getattr(self._model, "text", None)
+        if text_mod is not None:
+            for p in text_mod.parameters():
+                p.requires_grad = False
+        else:
+            for attr in ("transformer", "token_embedding", "ln_final"):
+                mod = getattr(self._model, attr, None)
+                if mod is not None:
+                    for p in mod.parameters():
+                        p.requires_grad = False
+            for attr in ("positional_embedding", "text_projection"):
+                t = getattr(self._model, attr, None)
+                if isinstance(t, torch.nn.Parameter):
+                    t.requires_grad = False
+
     def _apply_freezing(self, config: dict[str, Any]) -> None:
         if config.get("freeze_backbone", False):
             for p in self._model.visual.parameters():
                 p.requires_grad = False
-            for p in self._model.transformer.parameters():
-                p.requires_grad = False
+            self._freeze_text_tower()
             # logit_scale остаётся обучаемым
-            log.info("Backbone заморожен (visual + transformer)")
+            log.info("Backbone заморожен (visual + text)")
         else:
             if config.get("freeze_visual", False):
                 for p in self._model.visual.parameters():
                     p.requires_grad = False
                 log.info("Visual backbone заморожен")
             if config.get("freeze_text", False):
-                for p in self._model.transformer.parameters():
-                    p.requires_grad = False
-                log.info("Text transformer заморожен")
+                self._freeze_text_tower()
+                log.info("Text tower заморожен")
 
         trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
         total = sum(p.numel() for p in self.parameters())

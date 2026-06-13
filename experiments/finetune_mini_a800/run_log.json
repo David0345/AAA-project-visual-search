@@ -1,0 +1,55 @@
+{
+  "model": "xlm_clip_vit_b32",
+  "device": "cuda",
+  "epochs": 3,
+  "batch_size": 256,
+  "lr": 5e-06,
+  "train_items": 40245,
+  "baseline": {
+    "txt": {
+      "mrr": 0.602,
+      "recall@10": 0.282
+    },
+    "image": {
+      "mrr": 0.001,
+      "recall@10": 0.001
+    },
+    "multimodal": {
+      "mrr": 0.062,
+      "recall@10": 0.072
+    },
+    "all": {
+      "mrr": 0.227,
+      "recall@10": 0.121
+    }
+  },
+  "epochs_log": [
+    {
+      "epoch": 1,
+      "train": {
+        "avg_loss": 3.6437866566287482,
+        "steps": 157,
+        "elapsed_sec": 178.74630980659276,
+        "imgs_per_sec": 224.8549916554282
+      }
+    },
+    {
+      "epoch": 2,
+      "train": {
+        "avg_loss": 3.2065828757680905,
+        "steps": 157,
+        "elapsed_sec": 177.14014665596187,
+        "imgs_per_sec": 226.89379431338125
+      }
+    },
+    {
+      "epoch": 3,
+      "train": {
+        "avg_loss": 2.9741022100873815,
+        "steps": 157,
+        "elapsed_sec": 175.31511328276247,
+        "imgs_per_sec": 229.2557626516493
+      }
+    }
+  ]
+}

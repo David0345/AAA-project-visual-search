@@ -1,0 +1,92 @@
+{
+  "run_name": "micro_lr1e-6_bs512",
+  "model": "xlm_clip_vit_b32",
+  "device": "cuda",
+  "amp": true,
+  "epochs": 1,
+  "batch_size": 512,
+  "lr": 1e-06,
+  "loss": "infonce",
+  "temperature": 0.07,
+  "freeze_text": false,
+  "freeze_visual": false,
+  "freeze_backbone": false,
+  "grad_checkpointing": false,
+  "warmup_frac": 0.1,
+  "train_items": 40245,
+  "baseline": {
+    "txt": {
+      "mrr": 0.602,
+      "recall@10": 0.282
+    },
+    "image": {
+      "mrr": 0.001,
+      "recall@10": 0.001
+    },
+    "multimodal": {
+      "mrr": 0.062,
+      "recall@10": 0.072
+    },
+    "all": {
+      "mrr": 0.227,
+      "recall@10": 0.121
+    }
+  },
+  "epochs_log": [
+    {
+      "epoch": 1,
+      "train": {
+        "avg_loss": 5.0851640945825825,
+        "steps": 78,
+        "elapsed_sec": 39.75505632394925,
+        "imgs_per_sec": 1004.5514632044867
+      },
+      "eval": {
+        "image": {
+          "mode": "image",
+          "count": 175,
+          "mrr": 0.0019047619047619048,
+          "recall@1": 0.0,
+          "recall@5": 0.0008163265306122448,
+          "recall@10": 0.0008163265306122448,
+          "precision@1": 0.0,
+          "precision@5": 0.001142857142857143,
+          "precision@10": 0.0005714285714285715
+        },
+        "txt": {
+          "mode": "txt",
+          "count": 185,
+          "mrr": 0.6264821964821964,
+          "recall@1": 0.17467610467610462,
+          "recall@5": 0.26136422136422155,
+          "recall@10": 0.3109416559416563,
+          "precision@1": 0.5081081081081081,
+          "precision@5": 0.1545945945945942,
+          "precision@10": 0.089189189189189
+        },
+        "multimodal": {
+          "mode": "multimodal",
+          "count": 182,
+          "mrr": 0.10621620443049008,
+          "recall@1": 0.0,
+          "recall@5": 0.08444531658817371,
+          "recall@10": 0.1271650968079539,
+          "precision@1": 0.0,
+          "precision@5": 0.05164835164835164,
+          "precision@10": 0.03461538461538458
+        },
+        "all": {
+          "mode": "all",
+          "count": 542,
+          "mrr": 0.25011787617876186,
+          "recall@1": 0.05962191764774789,
+          "recall@5": 0.11783078545071181,
+          "recall@10": 0.14909799097990997,
+          "precision@1": 0.17343173431734318,
+          "precision@5": 0.07047970479704797,
+          "precision@10": 0.04225092250922519
+        }
+      }
+    }
+  ]
+}

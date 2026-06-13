@@ -1,0 +1,147 @@
+{
+  "run_name": "best_lr2e-6_bs512",
+  "model": "xlm_clip_vit_b32",
+  "device": "cuda",
+  "amp": true,
+  "epochs": 2,
+  "batch_size": 512,
+  "lr": 2e-06,
+  "loss": "infonce",
+  "temperature": 0.07,
+  "freeze_text": false,
+  "freeze_visual": false,
+  "freeze_backbone": false,
+  "grad_checkpointing": false,
+  "warmup_frac": 0.1,
+  "train_items": 40245,
+  "baseline": {
+    "txt": {
+      "mrr": 0.602,
+      "recall@10": 0.282
+    },
+    "image": {
+      "mrr": 0.001,
+      "recall@10": 0.001
+    },
+    "multimodal": {
+      "mrr": 0.062,
+      "recall@10": 0.072
+    },
+    "all": {
+      "mrr": 0.227,
+      "recall@10": 0.121
+    }
+  },
+  "epochs_log": [
+    {
+      "epoch": 1,
+      "train": {
+        "avg_loss": 4.831819485395383,
+        "steps": 78,
+        "elapsed_sec": 38.96373414574191,
+        "imgs_per_sec": 1024.9530974269915
+      },
+      "eval": {
+        "image": {
+          "mode": "image",
+          "count": 175,
+          "mrr": 0.002857142857142857,
+          "recall@1": 0.0,
+          "recall@5": 0.0008163265306122448,
+          "recall@10": 0.0008163265306122448,
+          "precision@1": 0.0,
+          "precision@5": 0.001142857142857143,
+          "precision@10": 0.0005714285714285715
+        },
+        "txt": {
+          "mode": "txt",
+          "count": 185,
+          "mrr": 0.6190647790647791,
+          "recall@1": 0.17129772629772622,
+          "recall@5": 0.2544272844272846,
+          "recall@10": 0.2988996138996142,
+          "precision@1": 0.5027027027027027,
+          "precision@5": 0.1502702702702699,
+          "precision@10": 0.0870270270270268
+        },
+        "multimodal": {
+          "mode": "multimodal",
+          "count": 182,
+          "mrr": 0.12107971393685672,
+          "recall@1": 0.0013736263736263737,
+          "recall@5": 0.09015349729635444,
+          "recall@10": 0.13693964765393332,
+          "precision@1": 0.005494505494505495,
+          "precision@5": 0.05384615384615383,
+          "precision@10": 0.03736263736263732
+        },
+        "all": {
+          "mode": "all",
+          "count": 542,
+          "mrr": 0.2528846717038598,
+          "recall@1": 0.058930035728928694,
+          "recall@5": 0.11737978094066667,
+          "recall@10": 0.14826992912786283,
+          "precision@1": 0.17343173431734318,
+          "precision@5": 0.06974169741697417,
+          "precision@10": 0.04243542435424365
+        }
+      }
+    },
+    {
+      "epoch": 2,
+      "train": {
+        "avg_loss": 4.343699773152669,
+        "steps": 78,
+        "elapsed_sec": 36.98463484086096,
+        "imgs_per_sec": 1079.7997647357693
+      },
+      "eval": {
+        "image": {
+          "mode": "image",
+          "count": 175,
+          "mrr": 0.002857142857142857,
+          "recall@1": 0.0,
+          "recall@5": 0.0008163265306122448,
+          "recall@10": 0.0008163265306122448,
+          "precision@1": 0.0,
+          "precision@5": 0.001142857142857143,
+          "precision@10": 0.0005714285714285715
+        },
+        "txt": {
+          "mode": "txt",
+          "count": 185,
+          "mrr": 0.6153603603603603,
+          "recall@1": 0.1697661947661947,
+          "recall@5": 0.26073359073359087,
+          "recall@10": 0.2999806949806953,
+          "precision@1": 0.4972972972972973,
+          "precision@5": 0.151351351351351,
+          "precision@10": 0.08756756756756735
+        },
+        "multimodal": {
+          "mode": "multimodal",
+          "count": 182,
+          "mrr": 0.12279565672422806,
+          "recall@1": 0.0013736263736263737,
+          "recall@5": 0.09235129949415663,
+          "recall@10": 0.14348726670155237,
+          "precision@1": 0.005494505494505495,
+          "precision@5": 0.05494505494505492,
+          "precision@10": 0.038461538461538415
+        },
+        "all": {
+          "mode": "all",
+          "count": 542,
+          "mrr": 0.2521964505359338,
+          "recall@1": 0.05840728050137642,
+          "recall@5": 0.12027030984595571,
+          "recall@10": 0.1508375798043696,
+          "precision@1": 0.17158671586715868,
+          "precision@5": 0.07047970479704797,
+          "precision@10": 0.042988929889299005
+        }
+      }
+    }
+  ]
+}

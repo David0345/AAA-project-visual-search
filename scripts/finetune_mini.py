@@ -78,7 +78,16 @@ def build_train_loader(
 
             # Убираем строки с пустыми queries
             self.df = self.df[self.df["queries"].map(len) > 0].reset_index(drop=True)
-            log.info("Dataset: %d items", len(self.df))
+
+            # Мульти-фото режим: если есть image_paths (титул + доп.ракурсы),
+            # каждый вызов сэмплируем случайный ракурс → визуальная аугментация
+            # по эпохам без ложных негативов (в батче 1 строка = 1 товар).
+            self.multi_image = "image_paths" in self.df.columns
+            if self.multi_image and self.df["image_paths"].dtype == object:
+                self.df["image_paths"] = self.df["image_paths"].apply(
+                    lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+                )
+            log.info("Dataset: %d items (multi_image=%s)", len(self.df), self.multi_image)
 
         def __len__(self):
             return len(self.df)
@@ -86,14 +95,24 @@ def build_train_loader(
         def __getitem__(self, idx):
             row = self.df.iloc[idx]
 
-            # Изображение
-            img_path = self.images_root / row["title_image_path"]
+            # Изображение: в мульти-фото режиме случайный ракурс, иначе титул
+            rel_path = row["title_image_path"]
+            if self.multi_image:
+                paths = row["image_paths"]
+                if isinstance(paths, (list, tuple, np.ndarray)) and len(paths) > 0:
+                    rel_path = paths[int(self.rng.integers(len(paths)))]
+
+            img_path = self.images_root / rel_path
             try:
                 image = Image.open(img_path).convert("RGB")
                 img_tensor = self.preprocess(image)
             except Exception as e:
                 log.debug("Ошибка загрузки %s: %s", img_path, e)
-                img_tensor = torch.zeros(3, 224, 224)
+                try:
+                    image = Image.open(self.images_root / row["title_image_path"]).convert("RGB")
+                    img_tensor = self.preprocess(image)
+                except Exception:
+                    img_tensor = torch.zeros(3, 224, 224)
 
             # Текст: случайный запрос
             queries = row["queries"]
@@ -254,6 +273,9 @@ def train_epoch(
     device: torch.device,
     epoch: int,
     log_every: int = 20,
+    amp: bool = False,
+    amp_dtype: torch.dtype = torch.bfloat16,
+    scheduler=None,
 ) -> dict:
     model.train()
     total_loss = 0.0
@@ -265,14 +287,17 @@ def train_epoch(
         images = images.to(device)
         tokens = tokens.to(device)
 
-        img_emb = model.encode_image(images)
-        txt_emb = model.encode_text(tokens)
-        loss = loss_fn(img_emb, txt_emb)
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp):
+            img_emb = model.encode_image(images)
+            txt_emb = model.encode_text(tokens)
+            loss = loss_fn(img_emb, txt_emb)
 
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
+        if scheduler is not None:
+            scheduler.step()  # per-step (warmup + cosine)
 
         total_loss += loss.item()
         n_batches += 1
@@ -300,6 +325,77 @@ def train_epoch(
 # Main
 # ---------------------------------------------------------------------------
 
+def append_ledger(run_log: dict, ledger_path: Path) -> None:
+    """Дописать одну строку с итогом прогона в общий JSONL-ledger.
+
+    Цель — копить историю всех замеров (config + финальные метрики по режимам),
+    чтобы отслеживать, не деградирует ли txt после дообучения (как было у коллег).
+    """
+    import datetime as _dt
+
+    epochs_log = run_log.get("epochs_log", [])
+    last = epochs_log[-1] if epochs_log else {}
+    final_eval = last.get("eval")  # None если запускали с --no-eval
+
+    def _mode_metric(mode: str, key: str):
+        if not final_eval or mode not in final_eval:
+            return None
+        return final_eval[mode].get(key)
+
+    # Пер-эпоховые траектории txt/all MRR + лучшая эпоха по all MRR
+    def _traj(mode):
+        return [(e.get("eval") or {}).get(mode, {}).get("mrr") for e in epochs_log]
+    all_traj = _traj("all")
+    best_epoch = None
+    valid = [(i + 1, v) for i, v in enumerate(all_traj) if v is not None]
+    if valid:
+        best_epoch = max(valid, key=lambda t: t[1])[0]
+
+    freeze = [k.split("_")[1] for k in ("freeze_text", "freeze_visual", "freeze_backbone")
+              if run_log.get(k)]
+    rec = {
+        "ts": _dt.datetime.now().isoformat(timespec="seconds"),
+        "run_name": run_log.get("run_name"),
+        "model": run_log.get("model"),
+        "device": run_log.get("device"),
+        "amp": run_log.get("amp"),
+        "epochs": run_log.get("epochs"),
+        "batch_size": run_log.get("batch_size"),
+        "lr": run_log.get("lr"),
+        "loss": run_log.get("loss"),
+        "temperature": run_log.get("temperature"),
+        "freeze": "+".join(freeze) if freeze else None,
+        "grad_checkpointing": run_log.get("grad_checkpointing"),
+        "warmup_frac": run_log.get("warmup_frac"),
+        "train_items": run_log.get("train_items"),
+        "imgs_per_sec": round(last.get("train", {}).get("imgs_per_sec", 0), 1) if last else None,
+        "loss_trajectory": [round(e.get("train", {}).get("avg_loss", float("nan")), 4)
+                            for e in epochs_log],
+        "txt_mrr_trajectory": [round(v, 4) if v is not None else None for v in _traj("txt")],
+        "mm_mrr_trajectory": [round(v, 4) if v is not None else None for v in _traj("multimodal")],
+        "all_mrr_trajectory": [round(v, 4) if v is not None else None for v in all_traj],
+        "best_epoch": best_epoch,
+        "eval": None,
+    }
+    if final_eval:
+        rec["eval"] = {
+            mode: {"mrr": _mode_metric(mode, "mrr"),
+                   "recall@10": _mode_metric(mode, "recall@10")}
+            for mode in ("image", "txt", "multimodal", "all")
+            if mode in final_eval
+        }
+        # Явный флаг деградации txt относительно zero-shot baseline
+        base_txt = run_log.get("baseline", {}).get("txt", {}).get("mrr")
+        ft_txt = _mode_metric("txt", "mrr")
+        if base_txt is not None and ft_txt is not None:
+            rec["txt_mrr_delta_vs_baseline"] = round(ft_txt - base_txt, 4)
+
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(ledger_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    log.info("Ledger += %s  (%s)", ledger_path, rec.get("run_name"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -318,6 +414,27 @@ def main() -> None:
                         help="Лимит шагов per epoch (для быстрой проверки)")
     parser.add_argument("--no-eval", action="store_true",
                         help="Пропустить eval после каждой эпохи (быстрее)")
+    parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=None,
+                        help="Mixed precision (bf16 autocast). По умолчанию вкл. на cuda")
+    parser.add_argument("--run-name", default=None,
+                        help="Метка прогона для ledger (по умолчанию = имя out-dir)")
+    # --- Рычаги оптимизации ---
+    parser.add_argument("--loss", default="infonce", choices=["infonce", "sigmoid"],
+                        help="Контрастивный лосс")
+    parser.add_argument("--temperature", type=float, default=0.07,
+                        help="Начальная температура лосса")
+    parser.add_argument("--freeze-text", action="store_true",
+                        help="Заморозить текстовую башню (защищает txt)")
+    parser.add_argument("--freeze-visual", action="store_true",
+                        help="Заморозить визуальную башню")
+    parser.add_argument("--freeze-backbone", action="store_true",
+                        help="Заморозить обе башни (учится только logit_scale/проекции)")
+    parser.add_argument("--grad-checkpointing", action="store_true",
+                        help="Gradient checkpointing (экономит память для больших batch)")
+    parser.add_argument("--warmup-frac", type=float, default=0.0,
+                        help="Доля шагов на linear warmup перед cosine (0 = без warmup)")
+    parser.add_argument("--save-ckpt", default="all", choices=["none", "best", "all"],
+                        help="none — не писать чекпойнты (свип); best — только лучшую эпоху (model-only); all — каждую")
     parser.add_argument("--out-dir", default=EXPERIMENTS_DIR / "finetune_mini")
     parser.add_argument("--k-values", nargs="+", type=int, default=[1, 5, 10])
     args = parser.parse_args()
@@ -336,12 +453,27 @@ def main() -> None:
         device = torch.device(args.device)
     log.info("Device: %s", device)
 
+    # AMP по умолчанию включён на cuda (bf16 — A800 поддерживает нативно, GradScaler не нужен)
+    amp = (device.type == "cuda") if args.amp is None else args.amp
+    if amp and device.type != "cuda":
+        log.warning("AMP запрошен на %s — отключаю (поддержано только на cuda)", device.type)
+        amp = False
+    log.info("AMP (bf16 autocast): %s", amp)
+
     # --- Модель ---
     from visual_search.models.registry import build_model
     from visual_search.models import encoders  # noqa — регистрация
 
-    log.info("Загружаем xlm_clip_vit_b32 ...")
-    model = build_model({"name": "xlm_clip_vit_b32"}).to(device)
+    model_config = {
+        "name": "xlm_clip_vit_b32",
+        "freeze_text": args.freeze_text,
+        "freeze_visual": args.freeze_visual,
+        "freeze_backbone": args.freeze_backbone,
+        "grad_checkpointing": args.grad_checkpointing,
+    }
+    log.info("Загружаем xlm_clip_vit_b32 (config=%s) ...",
+             {k: v for k, v in model_config.items() if v and k != "name"})
+    model = build_model(model_config).to(device)
     log.info("embed_dim=%d", model.embed_dim)
 
     # --- Процессор для датасета ---
@@ -360,21 +492,40 @@ def main() -> None:
     log.info("Train loader: %d batches/epoch (batch=%d)", len(loader), args.batch_size)
 
     # --- Loss ---
-    from visual_search.models.losses import InfoNCELoss
-    loss_fn = InfoNCELoss().to(device)
+    from visual_search.models.losses import InfoNCELoss, SigmoidLoss
+    if args.loss == "sigmoid":
+        loss_fn = SigmoidLoss(temperature=args.temperature).to(device)
+    else:
+        loss_fn = InfoNCELoss(temperature=args.temperature).to(device)
+    log.info("Loss: %s (temperature=%.3f)", args.loss, args.temperature)
 
-    # --- Optimizer ---
+    # --- Optimizer (только обучаемые параметры, чтобы замороженные не висели в AdamW) ---
+    trainable = [p for p in model.parameters() if p.requires_grad] + list(loss_fn.parameters())
     optimizer = torch.optim.AdamW(
-        list(model.parameters()) + list(loss_fn.parameters()),
+        trainable,
         lr=args.lr,
         weight_decay=0.01,
         betas=(0.9, 0.98),
     )
-    # Cosine LR
-    total_steps = args.epochs * len(loader)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps, eta_min=args.lr * 0.1
-    )
+
+    # --- LR schedule: linear warmup -> cosine, шаг по батчу ---
+    import math as _math
+    steps_per_epoch = args.max_steps or len(loader)
+    total_steps = max(1, args.epochs * steps_per_epoch)
+    warmup_steps = int(args.warmup_frac * total_steps)
+    eta_ratio = 0.1  # eta_min = lr * 0.1
+
+    def _lr_lambda(step: int) -> float:
+        if warmup_steps > 0 and step < warmup_steps:
+            return (step + 1) / warmup_steps
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        progress = min(1.0, progress)
+        cos = 0.5 * (1.0 + _math.cos(_math.pi * progress))
+        return eta_ratio + (1.0 - eta_ratio) * cos
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
+    log.info("Schedule: warmup=%d / total=%d шагов (warmup_frac=%.2f)",
+             warmup_steps, total_steps, args.warmup_frac)
 
     # --- Val CSV ---
     val_csv = args.val_csv or str(PROJECT_ROOT / "src/visual_search/evaluation/val_dataset/val_dataset.csv")
@@ -383,12 +534,22 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    run_name = args.run_name or out_dir.name
     run_log = {
+        "run_name": run_name,
         "model": "xlm_clip_vit_b32",
         "device": str(device),
+        "amp": amp,
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "lr": args.lr,
+        "loss": args.loss,
+        "temperature": args.temperature,
+        "freeze_text": args.freeze_text,
+        "freeze_visual": args.freeze_visual,
+        "freeze_backbone": args.freeze_backbone,
+        "grad_checkpointing": args.grad_checkpointing,
+        "warmup_frac": args.warmup_frac,
         "train_items": len(loader.dataset),
         "baseline": BASELINE,
         "epochs_log": [],
@@ -401,6 +562,7 @@ def main() -> None:
     log.info("=" * 55)
 
     # --- Цикл обучения ---
+    best_metric = float("-inf")  # для --save-ckpt best (по all MRR, иначе -loss)
     for epoch in range(1, args.epochs + 1):
         log.info("\n--- Epoch %d/%d ---", epoch, args.epochs)
 
@@ -420,13 +582,12 @@ def main() -> None:
 
             train_stats = train_epoch(
                 model, _LimitedLoader(loader, args.max_steps),
-                optimizer, loss_fn, device, epoch,
+                optimizer, loss_fn, device, epoch, amp=amp, scheduler=scheduler,
             )
         else:
             train_stats = train_epoch(
-                model, loader, optimizer, loss_fn, device, epoch,
+                model, loader, optimizer, loss_fn, device, epoch, amp=amp, scheduler=scheduler,
             )
-        scheduler.step()
 
         log.info(
             "Epoch %d done: loss=%.4f  %.0f img/s  %.1f min",
@@ -455,21 +616,45 @@ def main() -> None:
 
         run_log["epochs_log"].append(epoch_entry)
 
-        # Сохраняем checkpoint
-        ckpt_path = out_dir / f"checkpoint_epoch{epoch}.pt"
-        torch.save({
-            "epoch": epoch,
-            "model_state": model.state_dict(),
-            "optimizer_state": optimizer.state_dict(),
-            "train_stats": train_stats,
-        }, ckpt_path)
-        log.info("Checkpoint: %s", ckpt_path)
+        # --- Checkpoint policy ---
+        if args.save_ckpt == "all":
+            ckpt_path = out_dir / f"checkpoint_epoch{epoch}.pt"
+            torch.save({
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "train_stats": train_stats,
+            }, ckpt_path)
+            log.info("Checkpoint: %s", ckpt_path)
+        elif args.save_ckpt == "best":
+            # Метрика выбора: all MRR (если есть eval), иначе -loss
+            cur = None
+            if "eval" in epoch_entry and "all" in epoch_entry["eval"]:
+                cur = epoch_entry["eval"]["all"].get("mrr")
+            if cur is None:
+                cur = -train_stats["avg_loss"]
+            if cur > best_metric:
+                best_metric = cur
+                for old in out_dir.glob("best_ep*_model_only.pt"):
+                    old.unlink()
+                best_path = out_dir / f"best_ep{epoch}_model_only.pt"
+                torch.save({
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),  # model-only (~1.4G), без optimizer
+                    "train_stats": train_stats,
+                    "eval_metrics": epoch_entry.get("eval"),
+                    "run_name": run_name,
+                }, best_path)
+                log.info("Best checkpoint (model-only): %s  (metric=%.4f)", best_path, cur)
 
     # --- Итоговый лог ---
     log_path = out_dir / "run_log.json"
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(run_log, f, indent=2, ensure_ascii=False)
     log.info("\nЛог сохранён: %s", log_path)
+
+    # --- Append в общий ledger (append-only, чтобы накапливать историю замеров) ---
+    append_ledger(run_log, EXPERIMENTS_DIR / "metrics_ledger.jsonl")
 
     log.info("\n=== ИТОГ ===")
     log.info("Обучение завершено. Скорость: ~%.0f img/s на %s",
