@@ -132,6 +132,7 @@ def main() -> None:
     ap.add_argument("--out-name", required=True)
     ap.add_argument("--mm-image-weight", type=float, default=0.25, help="вес картинки в multimodal-склейке (0.25 оптимален по свипу 2026-06-13)")
     ap.add_argument("--mm-sweep", action="store_true", help="свип веса склейки multimodal и выход")
+    ap.add_argument("--txt-override", default=None, help="JSON {query_id: text} — замена текста запроса (напр. перевод RU→EN)")
     ap.add_argument("--images-base", default=str(RAW_DIR / "dataset_1M"))
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
@@ -171,9 +172,17 @@ def main() -> None:
     from visual_search.evaluation.metrics import aggregate, ModeMetrics
     dataset = ValDataset(images_base=args.images_base)
 
+    txt_override = json.load(open(args.txt_override)) if args.txt_override else {}
+    if txt_override:
+        log.info("txt-override: %d замен текста (напр. перевод)", len(txt_override))
+
+    def query_text(q):
+        return txt_override.get(str(q.query_id), q.txt_query)
+
     def search_fn(q, mm_w_img=None):
         """mm_w_img — вес картинки в multimodal-склейке (текст = 1-w). None → args."""
         w_img = args.mm_image_weight if mm_w_img is None else mm_w_img
+        qtext = query_text(q)
         v_list, w = [], []
         if q.image_path is not None and q.mode in ("image", "multimodal"):
             try:
@@ -183,9 +192,9 @@ def main() -> None:
                 w.append(w_img if q.mode == "multimodal" else 1.0)
             except Exception:
                 pass
-        if q.txt_query is not None and q.mode in ("txt", "multimodal"):
+        if qtext is not None and q.mode in ("txt", "multimodal"):
             with torch.no_grad():
-                v_list.append(model.encode_text(model.tokenize(q.txt_query).to(device)).squeeze(0).cpu().numpy())
+                v_list.append(model.encode_text(model.tokenize(qtext).to(device)).squeeze(0).cpu().numpy())
             w.append((1.0 - w_img) if q.mode == "multimodal" else 1.0)
         if not v_list or sum(w) <= 0:
             return []
