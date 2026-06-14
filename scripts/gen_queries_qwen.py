@@ -135,6 +135,9 @@ def main():
         if not args.test and (i // B) % 5 == 0:
             done = i + len(batch); rate = done / (time.time() - t0 + 1e-9)
             print(f"  {done}/{len(rows)}  {rate:.2f} item/s  ETA {(len(rows)-done)/rate/60:.0f}min", flush=True)
+        # инкрементальное сохранение — чтобы при отсечке по времени не потерять данные
+        if args.full and (i // B) % 100 == 0 and results:
+            pd.DataFrame(results).to_parquet(args.out, index=False)
 
     if args.full:
         pd.DataFrame(results).to_parquet(args.out, index=False)

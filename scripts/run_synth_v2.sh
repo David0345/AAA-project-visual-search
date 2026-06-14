@@ -5,10 +5,10 @@
 set -uo pipefail
 cd ~/personal/AAA-project-visual-search
 PY=./.venv/bin/python
-TOTAL=90000
-GPUS=(2 3 4)
+TOTAL=60000
+GPUS=(2 3 4 5)
 NSHARD=${#GPUS[@]}
-MAXWAIT=39600   # 11h защитный лимит
+MAXWAIT=23400   # 6.5h защитный лимит — освободить GPU до рабочего дня
 log(){ echo "[$(date '+%F %T')] $*"; }
 
 log "=== STAGE 1: генерация $TOTAL товаров на $NSHARD GPU (${GPUS[*]}) ==="
@@ -28,6 +28,8 @@ while [ "$(ls data/interim/qwen_v2_shard*.parquet.done 2>/dev/null | wc -l)" -lt
 done
 ndone=$(ls data/interim/qwen_v2_shard*.parquet.done 2>/dev/null | wc -l)
 log "готово шардов: $ndone / $NSHARD"
+# освобождаем GPU: глушим возможных стрелглеров (инкрементальное сохранение уже на диске)
+pkill -f "qwen_v2_shard" 2>/dev/null; sleep 5
 
 log "=== STAGE 2: merge + build_synth ==="
 $PY - <<'EOF'
