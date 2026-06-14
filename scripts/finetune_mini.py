@@ -47,6 +47,39 @@ BASELINE = {
 # Dataset — тонкая обёртка над ContrastiveImageTextDataset
 # ---------------------------------------------------------------------------
 
+class _CategoryBatchSampler:
+    """Hard-negative батчинг: товары одной категории (param2) попадают в один
+    батч → in-batch негативы становятся «трудными» (похожие товары), модель учится
+    их различать. Каждую эпоху перетасовка внутри категорий и порядка батчей."""
+
+    def __init__(self, categories, batch_size, seed=42, drop_last=True):
+        self.groups: dict[str, list[int]] = {}
+        for i, c in enumerate(categories):
+            self.groups.setdefault(c, []).append(i)
+        self.bs = batch_size
+        self.seed = seed
+        self.drop_last = drop_last
+        self.epoch = 0
+        self._n = len(categories) // batch_size
+
+    def __iter__(self):
+        rng = np.random.default_rng(self.seed + self.epoch)
+        self.epoch += 1
+        order: list[int] = []
+        for k in rng.permutation(list(self.groups.keys())):
+            idxs = self.groups[k][:]
+            rng.shuffle(idxs)
+            order.extend(idxs)
+        batches = [order[i:i + self.bs] for i in range(0, len(order), self.bs)]
+        if self.drop_last and batches and len(batches[-1]) < self.bs:
+            batches.pop()
+        rng.shuffle(batches)
+        return iter(batches)
+
+    def __len__(self):
+        return self._n
+
+
 def build_train_loader(
     parquet_path: str,
     images_root: str,
@@ -55,6 +88,7 @@ def build_train_loader(
     batch_size: int,
     num_workers: int,
     seed: int = 42,
+    hard_neg: bool = False,
 ) -> DataLoader:
     from torch.utils.data import Dataset
 
@@ -87,6 +121,11 @@ def build_train_loader(
                 self.df["image_paths"] = self.df["image_paths"].apply(
                     lambda x: ast.literal_eval(x) if isinstance(x, str) else x
                 )
+            # категория товара (param2) для hard-negative батчинга
+            self.categories = (
+                self.df["param2"].fillna("unknown").astype(str).values
+                if "param2" in self.df.columns else None
+            )
             log.info("Dataset: %d items (multi_image=%s)", len(self.df), self.multi_image)
 
         def __len__(self):
@@ -131,6 +170,11 @@ def build_train_loader(
         )
 
     ds = _MiniDataset(parquet_path, images_root, preprocess, tokenizer, seed)
+    if hard_neg and ds.categories is not None:
+        sampler = _CategoryBatchSampler(ds.categories, batch_size, seed)
+        log.info("Hard-negative батчинг ВКЛ (категорийные батчи, %d батчей)", len(sampler))
+        return DataLoader(ds, batch_sampler=sampler, num_workers=num_workers,
+                          pin_memory=False, collate_fn=collate)
     return DataLoader(
         ds,
         batch_size=batch_size,
@@ -431,6 +475,8 @@ def main() -> None:
                         help="Заморозить визуальную башню")
     parser.add_argument("--freeze-backbone", action="store_true",
                         help="Заморозить обе башни (учится только logit_scale/проекции)")
+    parser.add_argument("--hard-neg-batching", action="store_true",
+                        help="батчи из товаров одной категории (param2) → трудные in-batch негативы")
     parser.add_argument("--grad-checkpointing", action="store_true",
                         help="Gradient checkpointing (экономит память для больших batch)")
     parser.add_argument("--warmup-frac", type=float, default=0.0,
@@ -490,6 +536,7 @@ def main() -> None:
         tokenizer=tokenizer,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        hard_neg=args.hard_neg_batching,
     )
     log.info("Train loader: %d batches/epoch (batch=%d)", len(loader), args.batch_size)
 
