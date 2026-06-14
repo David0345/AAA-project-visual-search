@@ -21,7 +21,8 @@ def main():
 
     train = pd.read_parquet(args.train_parquet)
     llm = pd.read_parquet(args.llm_queries)
-    llm = llm[llm["queries_llm"].map(lambda x: isinstance(x, (list, tuple)) and len(x) >= args.min_queries)]
+    # parquet возвращает списки как np.ndarray → проверяем по len(), а не isinstance
+    llm = llm[llm["queries_llm"].map(lambda x: x is not None and len(x) >= args.min_queries)]
     print(f"train_full: {len(train)} | llm-запросы (>= {args.min_queries}): {len(llm)}")
 
     merged = train.merge(llm, on="item_id", how="inner")
