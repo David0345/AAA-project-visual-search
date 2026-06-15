@@ -1,0 +1,10 @@
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pydantic==2.*
+pydantic-settings==2.*
+open-clip-torch==3.3.0
+torch==2.5.1
+faiss-cpu==1.9.*
+pandas==2.*
+pillow==11.*
+numpy==1.26.*
