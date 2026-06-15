@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Визуальный поиск Avito (MVP)</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Библиотека для сжатия изображений в браузере -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+    <style>
+        .result-card img { height: 250px; object-fit: cover; }
+        .tab-content { padding-top: 20px; }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container py-5" style="max-width: 800px;">
+    <h1 class="text-center mb-4">🔍 Визуальный поиск одежды</h1>
+
+    <!-- Карточка с табами -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-white">
+            <ul class="nav nav-tabs card-header-tabs" id="searchTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="image-tab-btn" data-bs-toggle="tab" data-bs-target="#image-tab" type="button" role="tab">📷 По фото</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="text-tab-btn" data-bs-toggle="tab" data-bs-target="#text-tab" type="button" role="tab">⌨️ По тексту</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="multi-tab-btn" data-bs-toggle="tab" data-bs-target="#multi-tab" type="button" role="tab">✨ Фото + Текст</button>
+                </li>
+            </ul>
+        </div>
+
+        <div class="card-body">
+            <div class="tab-content" id="searchTabsContent">
+                
+                <!-- Вкладка 1: Только фото -->
+                <div class="tab-pane fade show active" id="image-tab" role="tabpanel">
+                    <form class="search-form" data-mode="image">
+                        <div class="mb-3">
+                            <label class="form-label">Загрузите фотографию вещи</label>
+                            <input class="form-control" type="file" accept="image/*" required>
+                            <div class="form-text">Картинка будет автоматически сжата для быстрой отправки.</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 search-btn">
+                            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                            <span class="btn-text">Найти визуально похожее</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Вкладка 2: Только текст -->
+                <div class="tab-pane fade" id="text-tab" role="tabpanel">
+                    <form class="search-form" data-mode="text">
+                        <div class="mb-3">
+                            <label class="form-label">Опишите, что вы ищете</label>
+                            <input type="text" class="form-control" placeholder="Например: черное платье миди Zara новое" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 search-btn">
+                            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                            <span class="btn-text">Найти по описанию</span>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Вкладка 3: Мультимодальный -->
+                <div class="tab-pane fade" id="multi-tab" role="tabpanel">
+                    <form class="search-form" data-mode="multimodal">
+                        <div class="mb-3">
+                            <label class="form-label">1. Загрузите фото-референс</label>
+                            <input class="form-control img-input" type="file" accept="image/*">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">2. Уточните текстом (что изменить или добавить)</label>
+                            <input type="text" class="form-control txt-input" placeholder="Например: как на фото, но синего цвета и с длинным рукавом" required>
+                            <div class="form-text">Модель учтет и визуальный стиль фото, и ваши текстовые пожелания.</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 search-btn">
+                            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                            <span class="btn-text">Найти с учетом уточнений</span>
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Блок результатов -->
+    <div id="resultsArea" class="mt-5 d-none">
+        <h4 class="mb-3">Результаты поиска:</h4>
+        <div class="row row-cols-1 row-cols-md-3 g-4" id="resultsGrid">
+            <!-- Сюда JavaScript вставит карточки -->
+        </div>
+    </div>
+
+    <!-- Блок ошибок -->
+    <div id="errorArea" class="alert alert-danger d-none mt-4" role="alert"></div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    const API_URL = "http://localhost:8000/api/search"; // Заменить потом на реальный адрес бэкенда
+
+    const compressionOptions = {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 500,
+        useWebWorker: true
+    };
+
+    // Навешиваем обработчик на все формы с классом .search-form
+    document.querySelectorAll('.search-form').forEach(form => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const mode = form.dataset.mode;
+            const btn = form.querySelector('.search-btn');
+            const spinner = btn.querySelector('.spinner-border');
+            const btnText = btn.querySelector('.btn-text');
+            
+            // 1. UI: Включаем состояние загрузки
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            btnText.textContent = 'Обрабатываем запрос...';
+            hideError();
+            document.getElementById('resultsArea').classList.add('d-none');
+
+            try {
+                const formData = new FormData();
+                formData.append('mode', mode); // Подсказка для бэкенда (опционально)
+
+                // 2. Собираем данные в зависимости от вкладки
+                if (mode === 'image' || mode === 'multimodal') {
+                    const fileInput = form.querySelector('input[type="file"]');
+                    if (fileInput.files.length > 0) {
+                        const originalFile = fileInput.files[0];
+                        const compressedFile = await imageCompression(originalFile, compressionOptions);
+                        formData.append('image', compressedFile, originalFile.name);
+                    } else if (mode === 'image') {
+                        throw new Error("Пожалуйста, выберите изображение.");
+                    }
+                }
+
+                if (mode === 'text' || mode === 'multimodal') {
+                    const textInput = form.querySelector('input[type="text"]');
+                    const textVal = textInput.value.trim();
+                    if (textVal) {
+                        formData.append('text', textVal);
+                    } else if (mode === 'text') {
+                        throw new Error("Пожалуйста, введите текстовый запрос.");
+                    }
+                }
+
+                // 3. Отправка на сервер
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                renderResults(data.results);
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                // 4. UI: Возвращаем кнопку в исходное состояние
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                // Возвращаем исходный текст кнопки в зависимости от вкладки
+                if (mode === 'image') btnText.textContent = 'Найти визуально похожее';
+                else if (mode === 'text') btnText.textContent = 'Найти по описанию';
+                else btnText.textContent = 'Найти с учетом уточнений';
+            }
+        });
+    });
+
+    function renderResults(results) {
+        const grid = document.getElementById('resultsGrid');
+        grid.innerHTML = ''; 
+        
+        if (!results || results.length === 0) {
+            grid.innerHTML = '<div class="col-12 text-center text-muted py-5">Ничего не найдено. Попробуйте изменить запрос.</div>';
+            document.getElementById('resultsArea').classList.remove('d-none');
+            return;
+        }
+
+        results.forEach(item => {
+            const col = document.createElement('div');
+            col.className = 'col';
+            col.innerHTML = `
+                <div class="card h-100 result-card shadow-sm">
+                    <img src="${item.image_url}" class="card-img-top" alt="${item.title}" 
+                         onerror="this.src='https://via.placeholder.com/300x250?text=Нет+фото'">
+                    <div class="card-body">
+                        <h6 class="card-title text-truncate" title="${item.title}">${item.title}</h6>
+                        <p class="card-text mb-1">
+                            <span class="badge bg-secondary">${item.param2 || 'Категория'}</span>
+                            ${item.brand ? `<span class="badge bg-info text-dark">${item.brand}</span>` : ''}
+                        </p>
+                        <p class="card-text text-muted small mb-0">Сходство: ${(item.score * 100).toFixed(1)}%</p>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(col);
+        });
+
+        document.getElementById('resultsArea').classList.remove('d-none');
+        // Плавная прокрутка к результатам
+        document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorArea');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+    }
+
+    function hideError() {
+        document.getElementById('errorArea').classList.add('d-none');
+    }
+</script>
+</body>
+</html>
