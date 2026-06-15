@@ -255,7 +255,7 @@
 
         .skeleton-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
             gap: 1.5rem;
         }
 
@@ -526,39 +526,6 @@
     <!-- Skeleton Results -->
     <div class="skeleton-container" id="skeletonContainer">
         <div class="skeleton-grid">
-            <div class="skeleton-card">
-                <div class="skeleton-image"></div>
-                <div class="skeleton-body">
-                    <div class="skeleton-title"></div>
-                    <div class="skeleton-meta">
-                        <div class="skeleton-badge"></div>
-                        <div class="skeleton-badge"></div>
-                    </div>
-                    <div class="skeleton-score"></div>
-                </div>
-            </div>
-            <div class="skeleton-card">
-                <div class="skeleton-image"></div>
-                <div class="skeleton-body">
-                    <div class="skeleton-title"></div>
-                    <div class="skeleton-meta">
-                        <div class="skeleton-badge"></div>
-                        <div class="skeleton-badge"></div>
-                    </div>
-                    <div class="skeleton-score"></div>
-                </div>
-            </div>
-            <div class="skeleton-card">
-                <div class="skeleton-image"></div>
-                <div class="skeleton-body">
-                    <div class="skeleton-title"></div>
-                    <div class="skeleton-meta">
-                        <div class="skeleton-badge"></div>
-                        <div class="skeleton-badge"></div>
-                    </div>
-                    <div class="skeleton-score"></div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -779,6 +746,34 @@
             input.value = '';
             container.classList.remove('show');
         });
+    });
+
+    // Генерация skeleton-карточек
+    function generateSkeletonCards(count = 9) {
+        const grid = document.querySelector('.skeleton-grid');
+        grid.innerHTML = '';
+        
+        for (let i = 0; i < count; i++) {
+            const card = document.createElement('div');
+            card.className = 'skeleton-card';
+            card.innerHTML = `
+                <div class="skeleton-image"></div>
+                <div class="skeleton-body">
+                    <div class="skeleton-title"></div>
+                    <div class="skeleton-meta">
+                        <div class="skeleton-badge"></div>
+                        <div class="skeleton-badge"></div>
+                    </div>
+                    <div class="skeleton-score"></div>
+                </div>
+            `;
+            grid.appendChild(card);
+        }
+    }
+
+    // Вызов при загрузке страницы
+    document.addEventListener('DOMContentLoaded', () => {
+        generateSkeletonCards(9);
     });
     </script>
 </body>
