@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from visual_search.common.io import RAW_DIR, INTERIM_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -179,11 +180,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", type=Path,
-                        default="data/raw/dataset_1M")
+                        default=RAW_DIR / "dataset_1M")
     parser.add_argument("--valid-ids", type=Path,
-                        default="src/visual_search/data/eda/valid_image_ids.csv")
+                        default=INTERIM_DIR / "valid_image_ids.csv")
     parser.add_argument("--output", type=Path,
-                        default="data/interim/mini_train.parquet")
+                        default=INTERIM_DIR / "mini_train.parquet")
     args = parser.parse_args()
 
     prepare(

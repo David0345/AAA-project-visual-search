@@ -11,10 +11,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
-from visual_search.index.build_index import build_index
-
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from visual_search.common.io import PROCESSED_DIR, RAW_DIR, INTERIM_DIR
 from visual_search.common.logging import get_logger
+from visual_search.index.build_index import build_index
 
 logger = get_logger(__name__)
 
@@ -23,9 +26,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True, help="Путь к чекпойнту (.pt)")
     parser.add_argument("--images-csv", required=True, help="images.csv: image_id,item_id,image_path,is_title")
-    parser.add_argument("--out", default="data/processed/index", help="Директория для индекса")
-    parser.add_argument("--images-root", default="data/raw/dataset_1M", help="Корень изображений")
-    parser.add_argument("--valid-ids", default=None, help="valid_image_ids.csv (фильтр из EDA)")
+    parser.add_argument("--out", default=PROCESSED_DIR / "index", help="Директория для индекса")
+    parser.add_argument("--images-root", default=RAW_DIR / "dataset_1M", help="Корень изображений")
+    parser.add_argument("--valid-ids", default=INTERIM_DIR / "valid_image_ids.csv", help="valid_image_ids.csv (фильтр из EDA)")
     parser.add_argument("--pooling", default="title", choices=["title", "mean"])
     parser.add_argument("--backend", default="flat", choices=["flat", "ivf", "ivfpq", "hnsw"])
     parser.add_argument("--image-size", type=int, default=224)

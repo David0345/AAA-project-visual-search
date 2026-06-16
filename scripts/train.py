@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 import hydra
-from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
+from omegaconf import DictConfig
 import torch
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from visual_search.training.train import run
 from visual_search.common.seed import set_seed
 
@@ -17,8 +19,8 @@ from visual_search.common.seed import set_seed
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(config: DictConfig) -> None:
 
-    if config.seed.fix:
-        set_seed(config.seed.seed, deterministic=config.seed.deterministic_algorithms)
+    if config.random_seed.fix:
+        set_seed(config.random_seed.seed, deterministic=config.random_seed.deterministic_algorithms)
 
     if config.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

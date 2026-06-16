@@ -32,7 +32,7 @@ log = get_logger(__name__)
 def run(config: DictConfig, device: torch.device) -> None:
     log.info("Config:\n%s", OmegaConf.to_yaml(config))
 
-    model_cfg = OmegaConf.to_container(config.model, resolve=True)
+    model_cfg = config.model
     model = build_model(model_cfg)
     model = model.to(device)
     log.info("Model %s (embed_dim=%d) on %s", config.model.name, model.embed_dim, device)

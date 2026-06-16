@@ -1,0 +1,30 @@
+# @package _global_
+# Эксперимент: xlm_clip_vit_b32 на mini_train.parquet для локальной отладки (RTX 4060, 8GB VRAM)
+# Запуск: uv run python scripts/train.py experiment=xlm_clip_mini_local
+
+name: xlm_clip_mini_local
+
+defaults:
+  - override /model: xlm_clip_vit_b32
+  - override /train: adamw_warmup_cosine
+  - _self_
+
+data:
+  train_path: data/interim/mini_train.parquet
+  images_root: data/raw/dataset_1M
+  batch_size: 32
+  num_workers: 0
+  pin_memory: false
+
+
+model:
+  grad_checkpointing: true
+
+
+train:
+  epochs: 3
+  log_every: 100
+  gradient_accumulation: 2
+  amp: true
+  optimizer:
+    lr: 1e-5
