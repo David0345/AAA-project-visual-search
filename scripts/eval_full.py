@@ -51,10 +51,10 @@ def parse_targets(s: str) -> set[int]:
     return set()
 
 
-def build_catalog(images_base: str, catalog_size: int, seed: int) -> dict[int, str]:
+def build_catalog(images_base: str, catalog_size: int, seed: int, val_csv=VAL_CSV) -> dict[int, str]:
     """image_id -> относительный путь. Гарантированно включает val-запросы+таргеты,
     добивает дистракторами из локально присутствующих EDA-валидных картинок."""
-    val = pd.read_csv(VAL_CSV)
+    val = pd.read_csv(val_csv)
     need: set[int] = set(int(x) for x in val["image_id"].dropna())
     for s in val["target_images_id"].dropna():
         need |= parse_targets(s)
@@ -130,6 +130,7 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--k-values", nargs="+", type=int, default=[1, 5, 10])
     ap.add_argument("--out-name", required=True)
+    ap.add_argument("--val-csv", default=str(VAL_CSV), help="кастомный val CSV (напр. Gemini held-out)")
     ap.add_argument("--mm-image-weight", type=float, default=0.25, help="вес картинки в multimodal-склейке (0.25 оптимален по свипу 2026-06-13)")
     ap.add_argument("--mm-sweep", action="store_true", help="свип веса склейки multimodal и выход")
     ap.add_argument("--txt-override", default=None, help="JSON {query_id: text} — замена текста запроса (напр. перевод RU→EN)")
@@ -143,7 +144,7 @@ def main() -> None:
     preprocess, _ = model.get_processor()
 
     # 1) каталог
-    catalog = build_catalog(args.images_base, args.catalog_size, args.seed)
+    catalog = build_catalog(args.images_base, args.catalog_size, args.seed, val_csv=args.val_csv)
     ids = list(catalog.keys()); paths = [catalog[i] for i in ids]
 
     # 2) кодируем каталог через DataLoader
@@ -170,7 +171,7 @@ def main() -> None:
     # 3) eval по режимам
     from visual_search.evaluation.val_dataset import ValDataset
     from visual_search.evaluation.metrics import aggregate, ModeMetrics
-    dataset = ValDataset(images_base=args.images_base)
+    dataset = ValDataset(csv_path=args.val_csv, images_base=args.images_base)
 
     txt_override = json.load(open(args.txt_override)) if args.txt_override else {}
     if txt_override:
