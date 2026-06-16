@@ -7,7 +7,7 @@
 Запросы Gemini — 5 на товар, разнообразные. Релевантность авто: запрос → титульная
 картинка этого товара (target = её image_id)."""
 from __future__ import annotations
-import argparse, ast, os, sys
+import argparse, ast, json, os, sys
 from pathlib import Path
 import pandas as pd
 
@@ -27,8 +27,26 @@ def main():
     ap.add_argument("--seed", type=int, default=123)
     args = ap.parse_args()
 
+    def safe_parse(x):
+        if not isinstance(x, str):
+            return x
+        for fn in (ast.literal_eval, json.loads):
+            try:
+                v = fn(x)
+                if isinstance(v, (list, tuple)):
+                    return [str(q).strip() for q in v if str(q).strip()]
+            except Exception:
+                pass
+        return None
+
     g = pd.read_csv(args.gemini_csv)
-    g["queries"] = g["queries"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+    n0 = len(g)
+    g["item_id"] = pd.to_numeric(g["item_id"], errors="coerce")
+    g = g.dropna(subset=["item_id"])
+    g["item_id"] = g["item_id"].astype("int64")
+    g["queries"] = g["queries"].apply(safe_parse)
+    g = g[g["queries"].map(lambda v: isinstance(v, list) and len(v) >= 2)].reset_index(drop=True)
+    print(f"распарсено {len(g)} / {n0} (битых строк пропущено: {n0 - len(g)})")
 
     # титульная картинка товара: image_id + path
     imgs = pd.read_csv(IMAGES_CSV, usecols=["item_id", "image_id", "is_title", "image_path"])
