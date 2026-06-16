@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image
@@ -80,7 +81,8 @@ async def search(
         raise HTTPException(status_code=400, detail="Нужен text и/или image")
 
     try:
-        query_mode, results = eng.search(text, pil, top_k)
+        # инференс блокирующий (torch/faiss) — уводим из event loop в threadpool
+        query_mode, results = await run_in_threadpool(eng.search, text, pil, top_k)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
