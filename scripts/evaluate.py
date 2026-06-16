@@ -15,7 +15,7 @@
         data.val_path=data/processed/val.csv
 """
 from __future__ import annotations
-import logging
+
 import sys
 from pathlib import Path
 
@@ -33,15 +33,15 @@ from visual_search.data.dataset import SearchEvalDataset
 from visual_search.models.registry import build_model, get_processor
 from visual_search.training.checkpoint import load_checkpoint
 from visual_search.evaluation.evaluate import evaluate
-from visual_search.index.ann import ANNIndex # Предполагаем, что вы его реализуете
+from visual_search.index.ann import ANNIndex
 
 logger = get_logger(__name__)
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
 def main(config: DictConfig) -> None:
-    if config.seed.get("fix", True):
-        set_seed(config.seed.seed, deterministic=config.seed.get("deterministic_algorithms", False))
+    if config.random_seed.get("fix", True):
+        set_seed(config.random_seed.seed, deterministic=config.random_seed.get("deterministic_algorithms", False))
 
     if config.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,7 +75,7 @@ def main(config: DictConfig) -> None:
 
     dataset = SearchEvalDataset(
         csv_path=config.data.val_path,
-        image_root=config.data.images_root,
+        images_root=config.data.images_root,
         processor=processor,
     )
 
@@ -88,7 +88,7 @@ def main(config: DictConfig) -> None:
         k_values=config.eval.get("k_values", [1, 5, 10]),
     )
 
-    output_dir = Path(config.eval.get("output_dir", "experiments/eval_results"))
+    output_dir = Path(config.eval.get("output_dir", EXPERIMENTS_DIR / "eval_results"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     import json

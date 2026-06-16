@@ -26,6 +26,8 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from visual_search.common.seed import set_seed
+from visual_search.common.io import PROJECT_ROOT, RAW_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -37,15 +39,17 @@ def main() -> None:
                         choices=["clip_vit_b32", "clip_vit_b16", "xlm_clip_vit_b32"],
                         help="Имя модели из registry")
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--val-csv", default=None,
-                        help="Путь к val_dataset.csv (None = встроенный)")
-    parser.add_argument("--images-base", default="data/raw/dataset_1M",
+    parser.add_argument("--val-csv", default=PROJECT_ROOT / "src/visual_search/evaluation/val_dataset/val_dataset.csv",
+                        help="Путь к val_dataset.csv")
+    parser.add_argument("--images-base", default=RAW_DIR / "dataset_1M",
                         help="Корень каталога изображений")
     parser.add_argument("--max-catalog", type=int, default=None,
                         help="Ограничить каталог N случайными товарами (для быстрой проверки)")
     parser.add_argument("--k-values", nargs="+", type=int, default=[1, 5, 10])
     parser.add_argument("--out-dir", default="experiments/zeroshot")
     args = parser.parse_args()
+
+    set_seed(42, deterministic=False)
 
     # Device
     if args.device == "auto":

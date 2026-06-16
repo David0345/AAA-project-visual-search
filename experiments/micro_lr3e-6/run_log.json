@@ -1,0 +1,92 @@
+{
+  "run_name": "micro_lr3e-6_bs512",
+  "model": "xlm_clip_vit_b32",
+  "device": "cuda",
+  "amp": true,
+  "epochs": 1,
+  "batch_size": 512,
+  "lr": 3e-06,
+  "loss": "infonce",
+  "temperature": 0.07,
+  "freeze_text": false,
+  "freeze_visual": false,
+  "freeze_backbone": false,
+  "grad_checkpointing": false,
+  "warmup_frac": 0.1,
+  "train_items": 40245,
+  "baseline": {
+    "txt": {
+      "mrr": 0.602,
+      "recall@10": 0.282
+    },
+    "image": {
+      "mrr": 0.001,
+      "recall@10": 0.001
+    },
+    "multimodal": {
+      "mrr": 0.062,
+      "recall@10": 0.072
+    },
+    "all": {
+      "mrr": 0.227,
+      "recall@10": 0.121
+    }
+  },
+  "epochs_log": [
+    {
+      "epoch": 1,
+      "train": {
+        "avg_loss": 4.694044162065555,
+        "steps": 78,
+        "elapsed_sec": 40.27521449699998,
+        "imgs_per_sec": 991.5775868301025
+      },
+      "eval": {
+        "image": {
+          "mode": "image",
+          "count": 175,
+          "mrr": 0.002857142857142857,
+          "recall@1": 0.0,
+          "recall@5": 0.0008163265306122448,
+          "recall@10": 0.0008163265306122448,
+          "precision@1": 0.0,
+          "precision@5": 0.001142857142857143,
+          "precision@10": 0.0005714285714285715
+        },
+        "txt": {
+          "mode": "txt",
+          "count": 185,
+          "mrr": 0.6193843843843843,
+          "recall@1": 0.1708472758472758,
+          "recall@5": 0.2602831402831404,
+          "recall@10": 0.2934191334191337,
+          "precision@1": 0.5027027027027027,
+          "precision@5": 0.1545945945945942,
+          "precision@10": 0.08648648648648627
+        },
+        "multimodal": {
+          "mode": "multimodal",
+          "count": 182,
+          "mrr": 0.1233145822431536,
+          "recall@1": 0.0013736263736263737,
+          "recall@5": 0.0914878772021629,
+          "recall@10": 0.1354286586429443,
+          "precision@1": 0.005494505494505495,
+          "precision@5": 0.05384615384615383,
+          "precision@10": 0.038461538461538415
+        },
+        "all": {
+          "mode": "all",
+          "count": 542,
+          "mrr": 0.25374421601358854,
+          "recall@1": 0.05877628419141332,
+          "recall@5": 0.11982662683769708,
+          "recall@10": 0.14589190534762506,
+          "precision@1": 0.17343173431734318,
+          "precision@5": 0.07121771217712179,
+          "precision@10": 0.0426199261992621
+        }
+      }
+    }
+  ]
+}

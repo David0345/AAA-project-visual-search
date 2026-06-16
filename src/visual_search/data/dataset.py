@@ -30,13 +30,13 @@ class ContrastiveImageTextDataset(Dataset):
     def __init__(
         self,
         parquet_path: str,
-        image_root: str,
+        images_root: str,
         processor: CLIPProcessor,
         seed: int = 42,
         max_queries_per_item: Optional[int] = None,
     ):
         self.df = pd.read_parquet(parquet_path)
-        self.image_root = Path(image_root)
+        self.images_root = Path(images_root)
         self.processor = processor
         self.rng = torch.Generator()
         self.rng.manual_seed(seed)
@@ -48,7 +48,20 @@ class ContrastiveImageTextDataset(Dataset):
                 lambda x: ast.literal_eval(x) if isinstance(x, str) else x
             )
 
-        log.info(f'Loaded ContrastiveDataset: {len(self.df)} items from {parquet_path}')
+        # Опциональный мульти-фото режим: если есть колонка image_paths (список
+        # путей — титульная + доп. ракурсы), каждую эпоху сэмплируем случайный
+        # ракурс товара → визуальная аугментация без ложных негативов в батче
+        # (в батче по-прежнему одна строка = один товар).
+        self.multi_image = 'image_paths' in self.df.columns
+        if self.multi_image and self.df['image_paths'].dtype == object:
+            self.df['image_paths'] = self.df['image_paths'].apply(
+                lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+            )
+
+        log.info(
+            f'Loaded ContrastiveDataset: {len(self.df)} items from {parquet_path}'
+            f' (multi_image={self.multi_image})'
+        )
 
     def __len__(self) -> int:
         return len(self.df)
@@ -56,8 +69,21 @@ class ContrastiveImageTextDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         row = self.df.iloc[idx]
 
-        img_path = self.image_root / row['title_image_path']
-        image = Image.open(img_path).convert('RGB')
+        # Выбор картинки: в мульти-фото режиме случайный ракурс из image_paths
+        # (новый сэмпл на каждый вызов → разные ракурсы по эпохам). Иначе титул.
+        rel_path = row['title_image_path']
+        if self.multi_image:
+            paths = row['image_paths']
+            if isinstance(paths, (list, tuple)) and len(paths) > 0:
+                i = int(torch.randint(len(paths), (1,), generator=self.rng).item())
+                rel_path = paths[i]
+
+        img_path = self.images_root / rel_path
+        try:
+            image = Image.open(img_path).convert('RGB')
+        except (OSError, FileNotFoundError):
+            # битый/отсутствующий ракурс → откат на титульную
+            image = Image.open(self.images_root / row['title_image_path']).convert('RGB')
 
         queries = row['queries']
         if self.max_queries and len(queries) > self.max_queries:
@@ -97,11 +123,11 @@ class SearchEvalDataset(Dataset):
     def __init__(
         self,
         csv_path: str,
-        image_root: str,
+        images_root: str,
         processor: CLIPProcessor,
     ):
         self.df = pd.read_csv(csv_path)
-        self.image_root = Path(image_root)
+        self.images_root = Path(images_root)
         self.processor = processor
         log.info(f'Loaded SearchEvalDataset: {len(self.df)} queries from {csv_path}')
 
@@ -137,14 +163,14 @@ class SearchEvalDataset(Dataset):
             query['attention_mask'] = inputs['attention_mask'].squeeze(0)
 
         elif mode == 'image':
-            img_path = self.image_root / row['image_path']
+            img_path = self.images_root / row['image_path']
             image = Image.open(img_path).convert('RGB')
             inputs = self.processor(images=[image], return_tensors='pt')
             query['pixel_values'] = inputs['pixel_values'].squeeze(0)
 
         elif mode == 'multimodal':
             # Стратегия (может поменяем): энкодим раздельно, суммируем эмбеддинги с весом α
-            img_path = self.image_root / row['image_path']
+            img_path = self.images_root / row['image_path']
             image = Image.open(img_path).convert('RGB')
             text = str(row['txt_query'])
 
