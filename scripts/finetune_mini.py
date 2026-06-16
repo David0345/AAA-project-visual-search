@@ -103,6 +103,9 @@ def build_train_loader(
             self.preprocess = preprocess
             self.tokenizer = tokenizer
             self.rng = np.random.default_rng(seed)
+            # фолбэк-тензор правильного размера под модель (256 у SigLIP2, 224 у CLIP);
+            # хардкод 224 ломал collate, когда часть картинок не скачана локально
+            self._dummy = self.preprocess(Image.new("RGB", (64, 64)))
 
             # Парсим queries из строки если нужно
             if "queries" in self.df.columns and self.df["queries"].dtype == object:
@@ -151,7 +154,7 @@ def build_train_loader(
                     image = Image.open(self.images_root / row["title_image_path"]).convert("RGB")
                     img_tensor = self.preprocess(image)
                 except Exception:
-                    img_tensor = torch.zeros(3, 224, 224)
+                    img_tensor = self._dummy.clone()
 
             # Текст: случайный запрос
             queries = row["queries"]
