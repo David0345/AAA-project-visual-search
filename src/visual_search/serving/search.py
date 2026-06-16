@@ -35,6 +35,18 @@ def _feat(out) -> torch.Tensor:
     raise TypeError(f"Не нашёл эмбеддинг в выводе {type(out).__name__}")
 
 
+def _clean(v) -> str | None:
+    """Значение метаданных в str или None (NaN/None -> None, чтобы не было 'nan')."""
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return str(v)
+
+
 def _pick_device(name: str) -> torch.device:
     if name != "auto":
         return torch.device(name)
@@ -99,7 +111,7 @@ class SearchEngine:
         meta_path = Path(cfg.index_dir) / "metadata.parquet"
         md = pd.read_parquet(meta_path)
         md["item_id"] = md["item_id"].astype("int64")
-        self.meta = md.set_index("item_id").to_dict("index")
+        self.meta = {int(k): v for k, v in md.set_index("item_id").to_dict("index").items()}
         log.info("Готово: %d векторов, %d записей метаданных", self.index.ntotal, len(self.meta))
 
         # ключи S3 для presign (если режим presign)
@@ -107,6 +119,14 @@ class SearchEngine:
         self._sk = os.getenv("AWS_SECRET_ACCESS_KEY", "")
         if cfg.image_url_mode == "presign" and not (self._ak and self._sk and cfg.s3_bucket):
             log.warning("image_url_mode=presign, но нет S3-ключей/бакета — image_url будут как public/относительные")
+
+        # размерность модели должна совпадать с индексом, иначе поиск молча сломан
+        probe_dim = self._embed_text("проверка").shape[0]
+        if probe_dim != self.index.embed_dim:
+            raise RuntimeError(
+                f"Размерность модели ({probe_dim}) != индекса ({self.index.embed_dim}). "
+                f"Пересобери индекс той же моделью: scripts/build_index_siglip2.py с тем же MODEL_DIR."
+            )
 
     # ---- кодирование запросов ----
     @torch.no_grad()
@@ -165,9 +185,9 @@ class SearchEngine:
             results.append({
                 "item_id": iid,
                 "score": float(sc),
-                "image_url": self._image_url(str(md.get("image_path", ""))),
-                "title": str(md.get("product_text", "")),
-                "param2": (str(md["param2"]) if md.get("param2") is not None else None),
-                "brand": (str(md["brand"]) if md.get("brand") is not None else None),
+                "image_url": self._image_url(_clean(md.get("image_path")) or ""),
+                "title": _clean(md.get("product_text")) or "",
+                "param2": _clean(md.get("param2")),
+                "brand": _clean(md.get("brand")),
             })
         return mode, results
