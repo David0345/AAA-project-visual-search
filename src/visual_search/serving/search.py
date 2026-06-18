@@ -20,19 +20,8 @@ import torch.nn.functional as F
 from PIL import Image
 
 from visual_search.index.ann import ANNIndex
-from visual_search.serving.presign import presign_get
 
 log = logging.getLogger(__name__)
-
-
-def _feat(out) -> torch.Tensor:
-    if isinstance(out, torch.Tensor):
-        return out
-    for attr in ("image_embeds", "text_embeds", "pooler_output"):
-        v = getattr(out, attr, None)
-        if v is not None:
-            return v
-    raise TypeError(f"Не нашёл эмбеддинг в выводе {type(out).__name__}")
 
 
 def _clean(v) -> str | None:
@@ -59,11 +48,12 @@ def _pick_device(name: str) -> torch.device:
 
 @dataclass
 class EngineConfig:
-    model_dir: str = "google/siglip2-base-patch16-224"
+    model_dir: str = "siglip2_l16_256"       # имя в open_clip-registry (visual_search.models)
+    checkpoint: str = ""                       # путь к *_model_only.pt (дообученная v1)
     index_dir: str = "data/processed/serving_index"
     device: str = "auto"
     max_text_len: int = 64
-    mm_alpha: float = 0.5
+    mm_alpha: float = 0.75                    # вес текста в multimodal (оптимум по свипу: текст 0.75 / картинка 0.25)
     image_url_mode: str = "presign"          # presign | public
     s3_bucket: str = ""
     s3_endpoint: str = "storage.yandexcloud.net"
@@ -75,6 +65,7 @@ class EngineConfig:
     def from_env(cls) -> "EngineConfig":
         return cls(
             model_dir=os.getenv("MODEL_DIR", cls.model_dir),
+            checkpoint=os.getenv("CHECKPOINT", cls.checkpoint),
             index_dir=os.getenv("INDEX_DIR", cls.index_dir),
             device=os.getenv("DEVICE", cls.device),
             max_text_len=int(os.getenv("MAX_TEXT_LEN", cls.max_text_len)),
@@ -101,10 +92,17 @@ class SearchEngine:
         except Exception:  # noqa: BLE001
             pass
 
-        from transformers import AutoModel, AutoProcessor
-        log.info("Загружаю модель %s ...", cfg.model_dir)
-        self.processor = AutoProcessor.from_pretrained(cfg.model_dir)
-        self.model = AutoModel.from_pretrained(cfg.model_dir).to(self.device).eval()
+        # наша модель — open_clip SigLIP2 (дообученная v1), грузим через registry
+        from visual_search.models.registry import build_model
+        from visual_search.models import encoders  # noqa: F401 — регистрация
+        log.info("Загружаю open_clip-модель %s (ckpt=%s) ...", cfg.model_dir, cfg.checkpoint or "—")
+        self.model = build_model({"name": cfg.model_dir}).to(self.device)
+        if cfg.checkpoint:
+            state = torch.load(cfg.checkpoint, map_location=self.device)
+            missing, unexpected = self.model.load_state_dict(state.get("model_state", state), strict=False)
+            log.info("ckpt загружен (missing=%d unexpected=%d)", len(missing), len(unexpected))
+        self.model.eval()
+        self.embed_dim = self.model.embed_dim
 
         log.info("Загружаю индекс %s ...", cfg.index_dir)
         self.index = ANNIndex.load(cfg.index_dir)
@@ -125,21 +123,20 @@ class SearchEngine:
         if probe_dim != self.index.embed_dim:
             raise RuntimeError(
                 f"Размерность модели ({probe_dim}) != индекса ({self.index.embed_dim}). "
-                f"Пересобери индекс той же моделью: scripts/build_index_siglip2.py с тем же MODEL_DIR."
+                f"Пересобери индекс той же моделью: scripts/build_catalog_index.py."
             )
 
     # ---- кодирование запросов ----
     @torch.no_grad()
     def _embed_text(self, text: str) -> np.ndarray:
-        enc = self.processor(text=[text], padding="max_length", max_length=self.cfg.max_text_len,
-                             truncation=True, return_tensors="pt").to(self.device)
-        v = F.normalize(_feat(self.model.get_text_features(**enc)).float(), dim=-1)
+        tokens = self.model.tokenize(text).to(self.device)
+        v = F.normalize(self.model.encode_text(tokens).float(), dim=-1)
         return v.squeeze(0).cpu().numpy().astype(np.float32)
 
     @torch.no_grad()
     def _embed_image(self, img: Image.Image) -> np.ndarray:
-        enc = self.processor(images=[img.convert("RGB")], return_tensors="pt").to(self.device)
-        v = F.normalize(_feat(self.model.get_image_features(**enc)).float(), dim=-1)
+        t = self.model.preprocess_image(img.convert("RGB")).to(self.device)
+        v = F.normalize(self.model.encode_image(t).float(), dim=-1)
         return v.squeeze(0).cpu().numpy().astype(np.float32)
 
     def _query_vector(self, text: str | None, image: Image.Image | None) -> tuple[str, np.ndarray]:
@@ -166,6 +163,7 @@ class SearchEngine:
     def _image_url(self, image_path: str) -> str:
         c = self.cfg
         if c.image_url_mode == "presign" and self._ak and self._sk and c.s3_bucket:
+            from visual_search.serving.presign import presign_get
             return presign_get(c.s3_bucket, image_path, self._ak, self._sk,
                                host=c.s3_endpoint, region=c.s3_region, expires=c.url_expires)
         if c.public_base_url:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from visual_search.serving.schemas import SearchResponse, SearchResult
@@ -33,10 +35,21 @@ log = logging.getLogger(__name__)
 _INDEX_HTML = Path(__file__).parent / "index.html"
 
 
+def _warmup(engine: SearchEngine) -> None:
+    """Прогон одного запроса при старте: компилирует CUDA-ядра, чтобы первый
+    реальный запрос не ловил холодную задержку в несколько секунд."""
+    try:
+        engine.search(text="прогрев", image=None, top_k=1)
+    except Exception:
+        log.warning("warmup пропущен")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = EngineConfig.from_env()
-    app.state.engine = SearchEngine(cfg)   # грузим модель/индекс один раз
+    engine = SearchEngine(cfg)
+    _warmup(engine)
+    app.state.engine = engine
     yield
 
 
@@ -44,6 +57,12 @@ app = FastAPI(title="AAA Visual Search", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# раздача картинок каталога статикой (для демо вместо S3): IMAGES_DIR содержит
+# images/AAA/BBB/x.jpg; URL = PUBLIC_BASE_URL + image_path. См. EngineConfig.
+_IMAGES_DIR = os.getenv("IMAGES_DIR", "")
+if _IMAGES_DIR and Path(_IMAGES_DIR).is_dir():
+    app.mount("/files", StaticFiles(directory=_IMAGES_DIR), name="files")
 
 
 @app.get("/health")

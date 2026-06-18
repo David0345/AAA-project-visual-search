@@ -1,0 +1,16 @@
+.git
+.venv
+data
+experiments
+notebooks
+docs
+configs
+tests
+artifacts
+catalog_images
+*.faiss
+*.parquet
+*.pt
+__pycache__
+*.pyc
+uv.lock

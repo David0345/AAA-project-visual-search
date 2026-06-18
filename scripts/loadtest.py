@@ -31,19 +31,22 @@ def sample_image_b64(images: list[str]) -> str:
         return base64.b64encode(f.read()).decode()
 
 
-def build_payload(mode: str, images: list[str], i: int) -> dict:
-    payload: dict = {"mode": mode, "top_k": 20}
+def build_request(mode: str, images: list[str], i: int) -> tuple[dict, dict]:
+    """(data, files) для multipart-формы API. Текст уникализируем → без кэша."""
+    data: dict = {"top_k": 20}
+    files: dict = {}
     if mode in ("txt", "multimodal"):
-        payload["text"] = f"{random.choice(TEXTS)} {i}"   # уникализируем → без кэша
+        data["text"] = f"{random.choice(TEXTS)} {i}"
     if mode in ("image", "multimodal"):
-        payload["image_b64"] = sample_image_b64(images)
-    return payload
+        with open(random.choice(images), "rb") as f:
+            files["image"] = ("q.jpg", f.read(), "image/jpeg")
+    return data, files
 
 
-def one_request(url: str, payload: dict, timeout: float) -> tuple[int, float]:
+def one_request(url: str, data: dict, files: dict, timeout: float) -> tuple[int, float]:
     t0 = time.perf_counter()
     try:
-        r = requests.post(url, json=payload, timeout=timeout)
+        r = requests.post(url, data=data, files=(files or None), timeout=timeout)
         return r.status_code, time.perf_counter() - t0
     except Exception:
         return 0, time.perf_counter() - t0
@@ -78,7 +81,8 @@ def main():
             sleep = target - time.perf_counter()
             if sleep > 0:
                 time.sleep(sleep)
-            futures.append(ex.submit(one_request, args.url, build_payload(args.mode, images, i), args.timeout))
+            data, files = build_request(args.mode, images, i)
+            futures.append(ex.submit(one_request, args.url, data, files, args.timeout))
         for f in futures:
             code, lat = f.result()
             codes.append(code); latencies.append(lat)
