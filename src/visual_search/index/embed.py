@@ -7,8 +7,8 @@
   * ``"mean"``  — усредняем эмбеддинги ВСЕХ изображений товара и заново
                   L2-нормируем (среднее нормированных векторов не нормировано).
 
-Выход: (N_items, embed_dim) float32 L2-norm + параллельный массив item_id
-(контракт §5.4). Какая стратегия лучше — решает scripts/benchmark_index.py.
+Выход: (N_items, embed_dim) float32 L2-norm + параллельный массив item_id.
+Какая стратегия лучше — решает scripts/benchmark_index.py.
 
 Источник каталога — images.csv со столбцами: image_id, item_id, image_path,
 is_title (как в data/prepare/build_train.py). Пути к картинкам — относительные

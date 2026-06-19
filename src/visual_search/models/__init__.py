@@ -1,8 +1,7 @@
 """models — определения энкодеров, головы, лоссы и фабрика моделей.
 
 Внешний код (training/, evaluation/, serving/) НЕ импортирует конкретные классы
-отсюда напрямую — только через registry.build_model(config). Это и есть точка
-гибкости: новый бэкбон добавляется здесь, остальной код не меняется.
+отсюда напрямую — только через registry.build_model(config).
 """
 
 from visual_search.models.base import Encoder
