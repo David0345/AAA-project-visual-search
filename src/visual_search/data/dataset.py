@@ -169,7 +169,7 @@ class SearchEvalDataset(Dataset):
             query['pixel_values'] = inputs['pixel_values'].squeeze(0)
 
         elif mode == 'multimodal':
-            # Стратегия (может поменяем): энкодим раздельно, суммируем эмбеддинги с весом α
+            # Энкодим картинку и текст раздельно, суммируем эмбеддинги с весом α
             img_path = self.images_root / row['image_path']
             image = Image.open(img_path).convert('RGB')
             text = str(row['txt_query'])

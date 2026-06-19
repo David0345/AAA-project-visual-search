@@ -1,12 +1,4 @@
 """Фабрика моделей и процессоров: «имя из конфига -> экземпляр».
-
-Добавить модель = написать класс в encoders.py и повесить @register("имя").
-training/evaluation/serving зовут только build_model/get_processor.
-
-Пример:
-    from visual_search.models.registry import build_model, get_processor
-    model = build_model({"name": "clip_vit_b32", "pretrained": "openai"})
-    preprocess, tokenizer = get_processor("openai")
 """
 
 from __future__ import annotations

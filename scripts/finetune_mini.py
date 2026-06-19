@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Smoke-тест файн-тюнинга xlm_clip_vit_b32 на mini_train.parquet (MPS/CPU).
+"""Контрастивный файн-тюнинг энкодера (open_clip) на parquet с парами картинка-запрос.
 
-Цель: оценить потенциальный прирост метрик и скорость обучения
-      перед запуском полноценного обучения на GPU.
+Единый тренер экспериментов: модель из registry, InfoNCE/Sigmoid лосс,
+AdamW + warmup/cosine, AMP bf16, опц. hard-negative батчинг (по param2).
+После каждой эпохи — eval по трём режимам и дозапись итога в
+experiments/metrics_ledger.jsonl.
 
-Запуск:
-    KMP_DUPLICATE_LIB_OK=TRUE python scripts/finetune_mini.py
-    KMP_DUPLICATE_LIB_OK=TRUE python scripts/finetune_mini.py --epochs 2 --batch-size 24
-    KMP_DUPLICATE_LIB_OK=TRUE python scripts/finetune_mini.py --device cpu --epochs 1
-
-После каждой эпохи сравниваем с zero-shot baseline (xlm MRR=0.602 на txt).
+Запуск (конфиг финальной модели):
+    .venv/bin/python scripts/finetune_mini.py --model siglip2_l16_256 \\
+        --train-parquet data/interim/train_synth.parquet \\
+        --lr 1e-6 --batch-size 256 --epochs 2 --save-ckpt best
 """
 
 from __future__ import annotations
@@ -103,8 +103,8 @@ def build_train_loader(
             self.preprocess = preprocess
             self.tokenizer = tokenizer
             self.rng = np.random.default_rng(seed)
-            # фолбэк-тензор правильного размера под модель (256 у SigLIP2, 224 у CLIP);
-            # хардкод 224 ломал collate, когда часть картинок не скачана локально
+            # фолбэк-тензор нужного размера (берём из самого preprocess) — для
+            # битых/отсутствующих картинок, чтобы не падал collate
             self._dummy = self.preprocess(Image.new("RGB", (64, 64)))
 
             # Парсим queries из строки если нужно
@@ -376,7 +376,7 @@ def append_ledger(run_log: dict, ledger_path: Path) -> None:
     """Дописать одну строку с итогом прогона в общий JSONL-ledger.
 
     Цель — копить историю всех замеров (config + финальные метрики по режимам),
-    чтобы отслеживать, не деградирует ли txt после дообучения (как было у коллег).
+    чтобы отслеживать, не деградирует ли txt после дообучения.
     """
     import datetime as _dt
 
@@ -589,7 +589,7 @@ def main() -> None:
     run_name = args.run_name or out_dir.name
     run_log = {
         "run_name": run_name,
-        "model": "xlm_clip_vit_b32",
+        "model": args.model,
         "device": str(device),
         "amp": amp,
         "epochs": args.epochs,

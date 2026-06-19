@@ -1,6 +1,6 @@
 """Контрастивные лоссы для мультимодального обучения.
 
-InfoNCELoss  — симметричный CLIP-лосс (рекомендуется для старта)
+InfoNCELoss  — симметричный CLIP-лосс
 SigmoidLoss  — SigLIP-лосс, работает лучше при маленьком batch_size
 
 Формулы
@@ -37,7 +37,7 @@ class InfoNCELoss(nn.Module):
 
     Args:
         temperature: начальная температура (< 1 → острее распределение).
-        learnable_temperature: если True — temperature обучается (рекомендуется).
+        learnable_temperature: если True — temperature обучается.
         max_logit_scale: клиппинг exp(log_scale) для стабильности (100 = CLIP-стандарт).
     """
 

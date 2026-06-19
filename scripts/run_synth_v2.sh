@@ -15,7 +15,7 @@ log "=== STAGE 1: генерация $TOTAL товаров на $NSHARD GPU (${G
 rm -f data/interim/qwen_v2_shard*.parquet data/interim/qwen_v2_shard*.parquet.done
 for i in $(seq 0 $((NSHARD-1))); do
   g=${GPUS[$i]}
-  CUDA_VISIBLE_DEVICES=$g $PY scripts/gen_queries_qwen.py --full \
+  CUDA_VISIBLE_DEVICES=$g $PY scripts/gen_queries_qwen.py --full --style multi \
     --total $TOTAL --num-shards $NSHARD --shard-id $i --batch-size 8 \
     --out data/interim/qwen_v2_shard${i}.parquet > experiments/gen_v2_shard${i}.log 2>&1 &
 done

@@ -12,8 +12,8 @@ xlm_clip_vit_b32    laion/xlm-roberta        RU!, embed_dim=512
 
 Выбор модели для Avito
 -----------------------
-Данные на русском => рекомендуется xlm_clip_vit_b32 как стартовая точка
-(pretrained на laion5B, text tower = xlm-roberta-base, знает русский).
+Данные на русском → нужна мультиязычная модель. Финальная — siglip2_l16_256
+(SigLIP 2 ViT-L/16, понимает русский без перевода); xlm_clip_vit_b32 — ранний baseline.
 """
 
 from __future__ import annotations

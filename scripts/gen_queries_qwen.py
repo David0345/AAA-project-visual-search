@@ -4,6 +4,12 @@ VLM видит реальные атрибуты (принт, фасон, дли
 метаданных → новый сигнал, выровненный с изображением. Бренд подаём текстом
 (на фото не виден). Цель — пробить потолок дообучения шаблонных запросов.
 
+Стили синтетики (--style):
+  descriptive  (v1, по умолчанию) — чистые описательные запросы. На этой синтетике
+               обучена ФИНАЛЬНАЯ модель (v1, 30k).
+  multi        (v2) — 5 стилей (короткий/стандартный/детальный/разговорный/
+               атрибутивный). Эксперимент, проиграл v1 на eval; оставлен как опция.
+
 Режимы:
   --test N           сгенерировать для N товаров и вывести (проверка качества)
   --full --limit K   сгенерировать для K товаров и сохранить parquet
@@ -21,7 +27,18 @@ from visual_search.common.io import INTERIM_DIR, RAW_DIR
 MODEL = "Qwen/Qwen2-VL-7B-Instruct"
 IMAGES_BASE = RAW_DIR / "dataset_1M"
 
-PROMPT = (
+# v1 — чистый описательный стиль (синтетика финальной модели)
+PROMPT_DESCRIPTIVE = (
+    "На фото женская одежда. Придумай РОВНО {n} коротких поисковых запросов "
+    "на русском, как реально пишут люди в поиске. Описывай ТОЛЬКО то, что реально ВИДНО, "
+    "не выдумывай деталей: тип вещи, цвет, принт/узор, фасон (оверсайз, приталенное), "
+    "длину, рукава, вырез, фактуру (вязаное, кожаное, джинсовое). {brand_hint} "
+    "Разной длины: где-то 2 слова, где-то с деталями. НЕ пиши слова «Авито», «фото», «бренд». "
+    "Только запросы, каждый с новой строки, без нумерации и пояснений."
+)
+
+# v2 — 5 стилей (эксперимент)
+PROMPT_MULTI = (
     "На фото женская одежда. Сгенерируй РОВНО {n} поисковых запросов на русском. "
     "Каждый запрос — в одном из 5 стилей ниже (по одному запросу на стиль). "
     "ВАЖНО: ровно {n} строк, по одной на стиль. Пиши ТОЛЬКО сам запрос. "
@@ -38,17 +55,42 @@ PROMPT = (
 )
 
 
+def brand_hint(brand) -> str:
+    """v1: одна подсказка про бренд."""
+    if pd.notna(brand) and str(brand).strip() and str(brand).lower() not in ("без бренда", "другой", "nan"):
+        return f"Бренд «{brand}» — добавь его в 1-2 запроса."
+    return ""
+
+
 def brand_fields(brand):
-    """(brand_hint, brand_attr) — подсказка про бренд и хвост для атрибутивного стиля."""
+    """v2: (brand_hint, brand_attr) — подсказка про бренд и хвост для атрибутивного стиля."""
     if pd.notna(brand) and str(brand).strip() and str(brand).lower() not in ("без бренда", "другой", "nan"):
         return f"Бренд «{brand}» — добавь его в стиль 5 и, по желанию, в стиль 1-2.", f", {brand}"
     return "", ""
 
 
+def build_prompt(style: str, n: int, brand) -> str:
+    if style == "multi":
+        bh, ba = brand_fields(brand)
+        return PROMPT_MULTI.format(n=n, brand_hint=bh, brand_attr=ba)
+    return PROMPT_DESCRIPTIVE.format(n=n, brand_hint=brand_hint(brand))
+
+
 _STYLE_LABELS = {"короткий", "стандартный", "детальный", "разговорный", "атрибутивный", "стиль", "стили", "запрос", "запросы"}
 
 
-def parse_lines(text: str, n: int) -> list[str]:
+def parse_descriptive(text: str, n: int) -> list[str]:
+    """v1: простой парс описательных строк (снять буллеты/нумерацию)."""
+    out = []
+    for ln in text.splitlines():
+        ln = ln.strip(" -•*0123456789.)\t").strip()
+        if ln and len(ln) > 1 and ":" not in ln[:12]:
+            out.append(ln)
+    return out[:n]
+
+
+def parse_multi(text: str, n: int) -> list[str]:
+    """v2: снять лейблы стилей/нумерацию, дедуп внутри товара."""
     out = []
     for ln in text.splitlines():
         ln = ln.strip(" -•*\t").strip()
@@ -66,8 +108,14 @@ def parse_lines(text: str, n: int) -> list[str]:
     return out[:n]
 
 
+def parse_lines(text: str, n: int, style: str) -> list[str]:
+    return parse_multi(text, n) if style == "multi" else parse_descriptive(text, n)
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--style", choices=["descriptive", "multi"], default="descriptive",
+                    help="descriptive (v1, синтетика финальной модели) | multi (v2, 5 стилей)")
     ap.add_argument("--test", type=int, default=0)
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--limit", type=int, default=None)
@@ -99,14 +147,13 @@ def main():
     elif args.limit:
         df = df.sample(args.limit, random_state=args.seed)
     rows = df.to_dict("records")
-    print(f"генерим для {len(rows)} товаров (shard {args.shard_id}/{args.num_shards}), n_queries={args.n_queries}")
+    print(f"генерим для {len(rows)} товаров (style={args.style}, shard {args.shard_id}/{args.num_shards}), n_queries={args.n_queries}")
 
     def gen_batch(batch):
         msgs = []
         for r in batch:
             img = Image.open(IMAGES_BASE / r["title_image_path"]).convert("RGB")
-            bh, ba = brand_fields(r.get("brand"))
-            txt = PROMPT.format(n=args.n_queries, brand_hint=bh, brand_attr=ba)
+            txt = build_prompt(args.style, args.n_queries, r.get("brand"))
             msgs.append([{"role": "user", "content": [
                 {"type": "image", "image": img}, {"type": "text", "text": txt}]}])
         texts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in msgs]
@@ -126,7 +173,7 @@ def main():
         except Exception as e:
             print(f"  батч {i} упал: {e}"); continue
         for r, o in zip(batch, outs):
-            qs = parse_lines(o, args.n_queries)
+            qs = parse_lines(o, args.n_queries, args.style)
             results.append({"item_id": int(r["item_id"]), "queries_llm": qs})
             if args.test:
                 print(f"\n--- item {r['item_id']} | бренд={r.get('brand')} | {r.get('title_image_path')}")

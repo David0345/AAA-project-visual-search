@@ -40,7 +40,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 VAL_CSV = PROJECT_ROOT / "src/visual_search/evaluation/val_dataset/val_dataset.csv"
-IMAGES_CSV = "/home/vasiutinpasha/personal/images.csv"
+# CSV всего каталога (image_id, image_path); переопределяется флагом --images-csv
+DEFAULT_IMAGES_CSV = RAW_DIR / "dataset_1M" / "images.csv"
 VALID_IDS = PROJECT_ROOT / "src/visual_search/data/eda/valid_image_ids.csv"
 
 
@@ -51,7 +52,8 @@ def parse_targets(s: str) -> set[int]:
     return set()
 
 
-def build_catalog(images_base: str, catalog_size: int, seed: int, val_csv=VAL_CSV) -> dict[int, str]:
+def build_catalog(images_base: str, catalog_size: int, seed: int, val_csv=VAL_CSV,
+                  images_csv=DEFAULT_IMAGES_CSV, valid_ids_csv=VALID_IDS) -> dict[int, str]:
     """image_id -> относительный путь. Гарантированно включает val-запросы+таргеты,
     добивает дистракторами из локально присутствующих EDA-валидных картинок."""
     val = pd.read_csv(val_csv)
@@ -59,12 +61,12 @@ def build_catalog(images_base: str, catalog_size: int, seed: int, val_csv=VAL_CS
     for s in val["target_images_id"].dropna():
         need |= parse_targets(s)
 
-    valid = set(pd.read_csv(VALID_IDS)["image_id"])
+    valid = set(pd.read_csv(valid_ids_csv)["image_id"])
     rng = np.random.default_rng(seed)
 
     id2path: dict[int, str] = {}
     distractor_pool: list[tuple[int, str]] = []
-    for ch in pd.read_csv(IMAGES_CSV, usecols=["image_id", "image_path"], chunksize=200_000):
+    for ch in pd.read_csv(images_csv, usecols=["image_id", "image_path"], chunksize=200_000):
         # нужные (val) — берём всегда, проверим существование ниже
         sub_need = ch[ch.image_id.isin(need)]
         for iid, p in zip(sub_need.image_id, sub_need.image_path):
@@ -131,10 +133,12 @@ def main() -> None:
     ap.add_argument("--k-values", nargs="+", type=int, default=[1, 5, 10])
     ap.add_argument("--out-name", required=True)
     ap.add_argument("--val-csv", default=str(VAL_CSV), help="кастомный val CSV (напр. Gemini held-out)")
-    ap.add_argument("--mm-image-weight", type=float, default=0.25, help="вес картинки в multimodal-склейке (0.25 оптимален по свипу 2026-06-13)")
+    ap.add_argument("--mm-image-weight", type=float, default=0.25, help="вес картинки в multimodal-склейке (0.25 — оптимум по свипу)")
     ap.add_argument("--mm-sweep", action="store_true", help="свип веса склейки multimodal и выход")
     ap.add_argument("--txt-override", default=None, help="JSON {query_id: text} — замена текста запроса (напр. перевод RU→EN)")
     ap.add_argument("--images-base", default=str(RAW_DIR / "dataset_1M"))
+    ap.add_argument("--images-csv", default=str(DEFAULT_IMAGES_CSV), help="CSV каталога (image_id, image_path)")
+    ap.add_argument("--valid-ids", default=str(VALID_IDS), help="CSV валидных image_id (пул дистракторов)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
     set_seed(args.seed, deterministic=False)
@@ -144,7 +148,8 @@ def main() -> None:
     preprocess, _ = model.get_processor()
 
     # 1) каталог
-    catalog = build_catalog(args.images_base, args.catalog_size, args.seed, val_csv=args.val_csv)
+    catalog = build_catalog(args.images_base, args.catalog_size, args.seed, val_csv=args.val_csv,
+                            images_csv=args.images_csv, valid_ids_csv=args.valid_ids)
     ids = list(catalog.keys()); paths = [catalog[i] for i in ids]
 
     # 2) кодируем каталог через DataLoader

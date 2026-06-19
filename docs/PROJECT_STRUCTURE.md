@@ -21,7 +21,8 @@ CLIP/SigLIP-подобной модели с контрастивным лосс
    дублировать его по папкам-скриптам нельзя.
 2. **Точки входа (CLI) тонкие.** В `scripts/` лежат запускаемые обёртки на
    несколько строк; вся логика — в пакете. Это держит импорты стабильными и
-   позволяет тестировать логику без запуска процессов.
+   позволяет тестировать логику без запуска процессов. (Принцип соблюдён для
+   сервиса; исследовательские скрипты в `scripts/` — самостоятельные, см. §9.)
 3. **Границы модулей = границы ответственности.** Каждый участник владеет своим
    подпакетом и редко трогает чужие файлы → меньше merge-конфликтов.
 4. **Модули общаются через зафиксированные контракты, а не через внутренности
@@ -250,12 +251,43 @@ python scripts/evaluate.py --checkpoint experiments/<run_id>/... --index ...
 python scripts/serve.py --checkpoint ... --index ...
 ```
 
-## 9. Что осознанно отложено
+## 9. Фактическое состояние: реальный пайплайн vs целевой каркас
 
-- **Деплой в облако** (Docker, оркестрация, автоскейл) — `serving/` пока каркас.
-- **Re-ranker** (кросс-энкодер / бизнес-правила) — слой добавляется в
-  `serving/search.py` после ANN, контракты не ломает.
-- **CLIP-семантическая фильтрация данных** и **визуальные теги** — следующая
-  итерация датасета (см. `data/prepare/` README).
-- **Квантование эмбеддингов / выбор реализации ANN** — тюнинг под требования
-  < 1 сек / 1 rps на этапе, когда появится обученная модель.
+Разделы 3–8 описывают **целевую** раскладку. По факту в репозитории сосуществуют
+два пути обучения, и при чтении кода это важно учитывать.
+
+**Каркас (reference).** Пакетный пайплайн — `training/` (`train.py`, `loop.py`,
+`optim.py`, `checkpoint.py`, `tracking.py`), тонкие
+`scripts/{train,prepare_data,build_index,evaluate}.py`,
+`data/{dataset,datamodule,collate}.py`, `evaluation/evaluate.py`,
+`index/{build_index,embed}.py`. Это чистая Hydra-архитектура «как должно быть».
+Финальную модель она **не** обучала и под open_clip/SigLIP в текущем виде не
+настроена (`data/dataset.py` рассчитан на `transformers.CLIPProcessor`). Оставлен
+как референс структуры и контрактов.
+
+**Фактический пайплайн экспериментов.** Победитель получен так:
+- запросы: `scripts/gen_queries_qwen.py` (Qwen2-VL по фото) →
+  `scripts/build_synth_train.py` → `train_synth.parquet`;
+- обучение: `scripts/finetune_mini.py` — единый тренер всех прогонов из
+  `experiments/metrics_ledger.jsonl` (open_clip preprocess/tokenizer, InfoNCE/
+  Sigmoid, AdamW + warmup/cosine, AMP bf16, опц. hard-negative батчинг);
+- оценка: `scripts/eval_full.py` — каталог 52k (таргеты + 50k дистракторов) →
+  `experiments/eval_full_ledger.jsonl`;
+- независимый held-out: `scripts/build_gemini_eval.py`;
+- индекс и сервис: `scripts/build_catalog_index.py` →
+  `scripts/repack_index_for_serving.py` → `serving/`.
+
+**Скрипты.** Принцип §2.2 (тонкие обёртки) выполнен только для `serve.py`;
+остальные ~25 скриптов в `scripts/` — исследовательские (свипы, генерация данных,
+оценка). Это артефакты экспериментов, хранятся намеренно.
+
+**Расхождения с деревом §3.** Целевые, пока не реализованы: `common/config.py`,
+`data/tokenization.py`, `models/heads.py` (заглушка). Реально присутствуют, но не
+указаны в §3: `serving/index.html` (фронтенд), `index/benchmark.py` (выбор
+пулинга по recall@10), синтетика и `eval_full.py`.
+
+**Воспроизводимость синтетики и eval.** `gen_queries_qwen.py` по умолчанию
+генерит **v1 (descriptive)** — синтетику финальной модели; `--style multi` даёт
+v2 (5 стилей). `eval_full.py` берёт каталог из `--images-csv` (по умолчанию
+`data/raw/dataset_1M/images.csv`) и `--valid-ids`, абсолютных путей нет.
+`finetune_mini.py` пишет в ledger реальное имя модели (`--model`).
