@@ -24,33 +24,36 @@ experiments/      лог исследования (SUMMARY.md — итог и м
 Dockerfile, requirements-serving.txt   контейнеризация сервиса
 ```
 
-## Запуск сервиса в Docker
+## Запуск сервиса в Docker (на любом сервере)
 
-Артефакты монтируются томом в `/artifacts`:
-- `model.pt` — веса дообученной модели;
-- `serving_index/` — FAISS-индекс (`index.faiss`, `ids.npy`, `meta.json`, `metadata.parquet`);
-- `catalog_images/` — картинки каталога (`images/.../*.jpg`) для отображения.
+Веса модели и индекс (~4 ГБ) **не хранятся в git** — они лежат на HuggingFace Hub
+и скачиваются автоматически при `docker build` (см. `ARG ARTIFACTS_REPO` в
+Dockerfile). Картинки галереи отдаёт демо-сервер через `PUBLIC_BASE_URL` —
+возить каталог изображений не нужно. Поэтому достаточно clone → build → run.
 
 ```bash
 # 1) клон
 git clone https://github.com/David0345/AAA-project-visual-search.git
 cd AAA-project-visual-search
 
-# 2) сборка образа
+# 2) сборка (скачает model.pt + serving_index с HuggingFace Hub)
 docker build -t avito-search .
 
 # 3) запуск (CPU). На GPU-хосте добавить: --gpus all -e DEVICE=cuda
-docker run -d -p 8000:8000 \
-  -v /path/to/artifacts:/artifacts \
-  -e PUBLIC_BASE_URL=http://<HOST>:8000/files \
-  avito-search
+docker run -d -p 8000:8000 avito-search
 
 # 4) пример запроса -> ответ с кодом 200
 curl http://localhost:8000/health
 curl -X POST http://localhost:8000/api/search \
   -F "text=красное вечернее платье" -F "top_k=5"
 ```
-Веб-интерфейс: `http://<HOST>:8000/`.
+Веб-интерфейс: `http://localhost:8000/`.
+
+Артефакты для образа берутся из репозитория по умолчанию; свой можно задать:
+`docker build --build-arg ARTIFACTS_REPO=user/repo -t avito-search .`. Чтобы
+подложить локальные артефакты вместо скачивания — смонтировать том (перекрывает
+запечённые): `docker run -d -p 8000:8000 -v /abs/path/artifacts:/artifacts avito-search`,
+где папка содержит `model.pt` и `serving_index/`.
 
 ### API
 - `GET  /health` — статус и размер каталога.
