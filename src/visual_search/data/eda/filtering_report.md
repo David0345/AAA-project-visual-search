@@ -154,9 +154,3 @@ python3 run_pixel_stats_full.py \
 - `out/full/dropped_phase2.csv` — со столбцом `drop_reason_p2` (blank/thin)
 - `out/full/filter_summary.json` — числовая сводка
 - `out/pixel_stats_full.csv` — pixel-level stats для всех 1.05M kept-картинок (entropy, edge_density, aspect и др.)
-
-## Что дальше
-
-1. **Дообучение CLIP** на `relevant_final.csv` — следующий шаг, который пользователь уже планирует. На нём же можно сделать «второй слой» семантической фильтрации.
-2. **Мониторинг in-distribution:** entropy/edge_density статистики, сохранённые в `pixel_stats_full.csv`, удобно использовать как входной gate в проде — если приходит image с явно outlier-статистикой, его можно отметить или прогнать через отдельный детектор.
-3. **Шарпенинг как preprocessing — не рекомендуем** (см. отдельный ответ): риск train-test mismatch плюс артефакты на уже резких картинках перевешивают выигрыш в борьбе с компрессией. Лучше тренировать модель robust к компрессии через augmentations.

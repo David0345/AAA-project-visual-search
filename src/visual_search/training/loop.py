@@ -1,6 +1,6 @@
 """Epoch/step логика: forward, лосс, backward, шаг оптимизатора, валидация.
 
-Ожидаемый формат батча от DataLoader (контракт с collate.py):
+Ожидаемый формат батча от DataLoader:
     {
         "images": Tensor(B, C, H, W),
         "input_ids": Tensor(B, L),

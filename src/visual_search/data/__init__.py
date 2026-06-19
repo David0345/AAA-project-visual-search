@@ -1,5 +1,5 @@
 """data — датасеты, даталоадеры, аугментации, токенизация, офлайн-подготовка.
 
-Опирается на контракт схемы train.parquet (§5.1 PROJECT_STRUCTURE) и отдаёт
-наружу DataLoader'ы. Офлайн-подготовка (EDA, сборка train.parquet) — в prepare/.
+Опирается на контракт схемы train.parquet и отдаёт наружу DataLoader'ы.
+Офлайн-подготовка (EDA, сборка train.parquet) — в prepare/.
 """
